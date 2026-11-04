@@ -1,0 +1,8 @@
+# Same bot, but on the real game window with real keyboard/mouse input.
+#   1. python demo/arena.py
+#   2. python -m sightflow run demo/arena_live.yaml        (F12 stops the bot)
+
+extends: arena_sim.yaml
+source: {type: window, title: "sightflow arena"}
+input: {type: keyboard_mouse, move_keys: {up: w, down: s, left: a, right: d}}
+run: {fps: 20, realtime: true}

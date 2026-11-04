@@ -1,0 +1,146 @@
+# sightflow
+
+**物体検出 + 人間が書くルールフロー**でゲームを自動操作するための小さなフレームワーク。
+
+AIに行動を学習させるのではなく、
+「何が見えているか」は検出器に任せ、「どう動くか」は人間がYAMLで書きます。
+学習データも報酬設計も不要で、失敗したときに *どのルールが悪いか* がすぐ分かります。
+
+```
+画面キャプチャ ─▶ 検出器(color / template / YOLO) ─▶ ルールフロー(YAML) ─▶ キーボード/マウス
+                                                     ▲
+                                  デバッグ表示: 検出枠・現在の状態・発火したルール
+```
+
+## デモの結果
+
+付属のミニゲーム **Bush Arena**（自作。草むらに隠れながら敵を撃ち、コインを集める）で、
+ボットは**描画された画素だけ**を見て操作します。ゲーム内部の状態は読みません。
+
+| エージェント | 平均スコア | 生存時間 (最大120s) | 撃破 | コイン |
+|---|---|---|---|---|
+| 何もしない | 0.0 | 14.8 s | 0 | 0 |
+| ランダム操作 | 13.8 | 26.2 s | 4.6 | 0 |
+| **sightflow（ルール40行）** | **184.0** | **120.0 s** | **46.2** | **45.4** |
+
+5シード平均。1ティックあたりの検出+判断は約7ms（CPU）。`python demo/bench.py` で再現できます。
+
+## インストール
+
+```bash
+pip install -r requirements.txt          # YOLOを使う場合は追加で: pip install ultralytics
+```
+
+## すぐ試す
+
+```bash
+python demo/bench.py                                         # ヘッドレスでベンチマーク
+python -m sightflow run demo/arena_sim.yaml --seconds 60       # 画面なしシミュレーション + デバッグ表示
+```
+
+実際のウィンドウを実際のキー入力で操作する場合（Windows）:
+
+```bash
+python demo/arena.py                          # ゲームを起動（自分で遊ぶなら WASD + クリック）
+python -m sightflow run demo/arena_live.yaml    # 別ターミナルで。F12 で停止
+```
+
+> 実行中はマウスとキーボードを奪います。止めるときは **F12**（デバッグ窓なら q / Esc）。
+> 先に `--dry-run` で判断だけ確認するのがおすすめです。
+
+## 設定ファイル
+
+```yaml
+source: {type: window, title: "my game"}      # window / screen / image / python
+input:  {type: keyboard_mouse, move_keys: {up: w, down: s, left: a, right: d}}
+anchor: player                                # 距離・方向の基準になるラベル（式中では me）
+
+detectors:
+  - {type: color, label: enemy, hsv: [[0,150,120],[8,255,255]], min_area: 150}
+  - {type: template, label: chest, image: sprites/chest.png, threshold: 0.85}
+  - {type: yolo, model: best.pt, labels: {player: 0, enemy: 1}, conf: 0.4}
+
+flow:
+  initial: hide
+  global:                                     # 全状態で最初に評価されるルール
+    - {when: gameover.any, do: [{key: r}], goto: hide, cooldown: 1.0}
+  states:
+    hide:
+      rules:                                  # 上から順に評価し、最初に真になった1つだけ実行
+        - when: enemy.within(300) > 0
+          goto: fight
+        - do: [{move_toward: bush.nearest}]   # when なし = 常に真
+    fight:
+      rules:
+        - when: not enemy.any
+          goto: hide
+        - do: [{click: enemy.nearest, cooldown: 0.3}]
+```
+
+`extends: base.yaml` で別ファイルを継承・上書きできます（例: `demo/arena_live.yaml`）。
+
+### 条件式で使えるもの
+
+| 名前 | 意味 |
+|---|---|
+| `enemy.any` / `enemy.count` | そのラベルが見えているか / 数 |
+| `enemy.nearest` / `.farthest` / `.best` | 最も近い / 遠い / スコアが高い検出 |
+| `enemy.within(200)` | 基準から200px以内の数 |
+| `d.x` `d.y` `d.w` `d.h` `d.score` `d.distance` `d.dx` `d.dy` `d.angle` `d.exists` | 検出ごとの値 |
+| `me` | 基準（anchor）の検出。見えないときは画面中央・`exists=False` |
+| `state_time` / `t` | 現在の状態に入ってからの秒数 / 経過時間 |
+| `vars.名前` | `set` アクションで保存した値（未設定は None） |
+| `frame.w` `frame.h` | フレームサイズ |
+| `min` `max` `abs` `len`、`and` `or` `not`、比較・四則演算 | 使える演算 |
+
+見つからないラベルの `.nearest` は「距離が無限大の空の検出」を返すので、
+`enemy.nearest.distance < 100` は例外にならず単に False になります。
+
+式は安全なサブセットだけを許可しています（import・`__xxx__`・任意の関数呼び出しは不可）。
+
+### アクション
+
+| アクション | 動作 |
+|---|---|
+| `{key: r}` | キーを1回押す（`space`, `f1` などの特殊キー名も可） |
+| `{move_toward: coin.nearest}` / `{move_away: ...}` | 基準から対象へ向かう／離れる。8方向の押しっぱなしキーに変換 |
+| `{click: enemy.nearest}` | 対象の位置をクリック（`[x, y]` も可） |
+| `{set: {name: 式}}` | `vars` に値を保存 |
+| `{log: "text"}` | コンソールに出力 |
+
+どのアクションにも `cooldown: 秒` を付けられます。ルール自体にも `cooldown` があります。
+移動系のアクションが実行されなかったティックでは、移動キーは離されます。
+状態には `on_enter:` で、入った瞬間に1回だけ実行するアクションも書けます。
+
+## 自分のゲームに使う手順
+
+1. `python -m sightflow grab my.yaml -o shot.png` で1フレーム保存
+2. `python -m sightflow pick shot.png` で対象の画素をクリックし、HSVの値を調べる
+3. `detectors` を書き、`python -m sightflow detect my.yaml shot.png -o check.png` で枠が正しく付くか確認
+4. `flow` を書き、`python -m sightflow run my.yaml --dry-run` でデバッグ表示だけ確認
+5. 問題なければ `--dry-run` を外して実行
+
+色で取れないものは `template`（スプライト画像）か `yolo`（自分で学習したモデル）に置き換えます。
+独自の検出器は `@sightflow.register("name")` で `Detector` を継承して追加できます。
+
+## 構成
+
+```
+sightflow/
+  detection.py   Detection / LabelGroup（条件式から見えるオブジェクト）
+  detectors.py   color / template / yolo とプラグイン登録
+  expr.py        安全な条件式
+  flow.py        状態・ルール・アクション・クールダウン
+  io.py          画面キャプチャ（ウィンドウ / 範囲 / 画像 / Python）と入力（pynput）
+  bot.py         設定読み込みとメインループ
+  overlay.py     デバッグ表示
+  cli.py         run / detect / grab / pick
+demo/            Bush Arena（自作ミニゲーム）・設定・ベンチマーク
+tests/
+```
+
+## 利用上の注意
+
+オンラインゲーム、特に対人戦での自動操作は、多くの場合利用規約で禁止されており、
+アカウント停止の対象になり、他のプレイヤーにも迷惑がかかります。
+このツールは、自作ゲーム・オフラインゲーム・自動化が許可された環境での利用を想定しています。

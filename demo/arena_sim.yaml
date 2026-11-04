@@ -1,0 +1,52 @@
+# Bush Arena bot, driven headless in-process (fast, for testing and benchmarks).
+# The bot only sees rendered pixels; see arena_live.yaml for the real-window version.
+
+source: {type: python, factory: "bridge:make_sim", seed: 0}
+input: {type: source}
+run: {fps: 20, realtime: false}
+
+anchor: player          # distances/directions are measured from this label ("me")
+
+detectors:              # HSV on OpenCV scale (H 0-179). Find values with: sightflow pick shot.png
+  - {type: color, label: player,   hsv: [[100, 150, 150], [118, 255, 255]], min_area: 150}
+  - {type: color, label: enemy,    hsv: [[[0, 150, 120], [8, 255, 255]], [[172, 150, 120], [179, 255, 255]]], min_area: 150}
+  - {type: color, label: bush,     hsv: [[55, 120, 90], [75, 255, 190]], min_area: 1500}
+  - {type: color, label: coin,     hsv: [[20, 200, 200], [30, 255, 255]], min_area: 40}
+  - {type: color, label: gameover, hsv: [[145, 150, 100], [155, 255, 200]], min_area: 8000}
+
+flow:
+  initial: hide
+  global:
+    - name: restart
+      when: gameover.any
+      do: [{key: r}]
+      goto: hide
+      cooldown: 1.0
+
+  states:
+    hide:                                   # sit in the nearest bush
+      rules:
+        - when: enemy.within(300) > 0
+          goto: fight
+        - when: coin.any and enemy.within(200) == 0
+          goto: collect
+        - when: bush.nearest.distance > 12
+          do: [{move_toward: bush.nearest}]
+
+    collect:                                # grab a nearby coin, then go back
+      rules:
+        - when: enemy.within(160) > 0
+          goto: fight
+        - when: not coin.any or state_time > 5
+          goto: hide
+        - do: [{move_toward: coin.nearest}]
+
+    fight:
+      rules:
+        - when: not enemy.any or enemy.nearest.distance > 380
+          goto: hide
+        - name: too close - back off and shoot
+          when: enemy.nearest.distance < 70
+          do: [{move_away: enemy.nearest}, {click: enemy.nearest, cooldown: 0.3}]
+        - name: shoot from cover
+          do: [{click: enemy.nearest, cooldown: 0.3}, {move_toward: bush.nearest}]
