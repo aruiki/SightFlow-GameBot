@@ -18,7 +18,7 @@ def _color(label: str) -> tuple[int, int, int]:
 
 def draw(frame: np.ndarray, groups: dict[str, LabelGroup], me: Detection,
          state: str, rule: str | None, fps: float | None = None,
-         move=None, clicks=()) -> np.ndarray:
+         move=None, clicks=(), drags=(), motion=None) -> np.ndarray:
     img = frame.copy()
     for label, g in groups.items():
         c = _color(label)
@@ -34,7 +34,11 @@ def draw(frame: np.ndarray, groups: dict[str, LabelGroup], me: Detection,
         cv2.arrowedLine(img, (int(me.x), int(me.y)), end, (255, 255, 255), 2, tipLength=0.3)
     for x, y in clicks:
         cv2.drawMarker(img, (int(x), int(y)), (0, 255, 255), cv2.MARKER_CROSS, 16, 2)
+    for fx, fy, tx, ty, _ in drags:
+        cv2.arrowedLine(img, (int(fx), int(fy)), (int(tx), int(ty)), (0, 255, 255), 2, tipLength=0.2)
     lines = [f"state: {state}", f"rule: {rule or '-'}"]
+    if motion is not None:
+        lines.append(f"speed: {motion.speed:5.0f}px/s  stuck: {motion.stuck_time:.1f}s")
     if fps is not None:
         lines.append(f"fps: {fps:.1f}")
     y = img.shape[0] - 10 - 16 * (len(lines) - 1)

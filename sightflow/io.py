@@ -145,7 +145,13 @@ class InputBackend:
     def tap(self, key: str):
         pass
 
+    def hold(self, key: str, seconds: float):
+        pass
+
     def click(self, x: float, y: float):  # frame coordinates
+        pass
+
+    def drag(self, fx: float, fy: float, tx: float, ty: float, seconds: float = 0.15):
         pass
 
     def close(self):
@@ -204,10 +210,31 @@ class KeyboardMouseInput(InputBackend):
         time.sleep(self.tap_seconds)
         self._kb.release(k)
 
+    def hold(self, key, seconds):
+        k = self._key(key)
+        self._kb.press(k)
+        time.sleep(seconds)
+        self._kb.release(k)
+
     def click(self, x, y):
         ox, oy = self.source.origin
         self._mouse.position = (int(ox + x), int(oy + y))
         self._mouse.click(self._Button.left)
+
+    def drag(self, fx, fy, tx, ty, seconds=0.15):
+        """Press at (fx, fy), glide to (tx, ty), release - a touch-style swipe.
+        Blocks for `seconds`."""
+        ox, oy = self.source.origin
+        steps = max(4, int(seconds / 0.015))
+        self._mouse.position = (int(ox + fx), int(oy + fy))
+        self._mouse.press(self._Button.left)
+        try:
+            for i in range(1, steps + 1):
+                f = i / steps
+                self._mouse.position = (int(ox + fx + (tx - fx) * f), int(oy + fy + (ty - fy) * f))
+                time.sleep(seconds / steps)
+        finally:
+            self._mouse.release(self._Button.left)
 
     def close(self):
         self.set_move(None)

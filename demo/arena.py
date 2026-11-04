@@ -2,6 +2,8 @@
 
 You (blue) collect coins (yellow) and shoot enemies (red) that chase you.
 Standing in a bush (green) hides you; enemies inside bushes are hidden too.
+Grey walls block movement and bullets (the demo bot deliberately does NOT
+detect walls - it relies on stuck detection to get around them).
 Touching an enemy costs 1 HP. At 0 HP the GAME OVER banner (purple) appears.
 
 Play it yourself:   python demo/arena.py        WASD move, click shoot, R restart
@@ -20,6 +22,7 @@ ENEMY = (230, 40, 40)
 BUSH = (40, 140, 60)
 COIN = (255, 210, 0)
 GAMEOVER = (150, 30, 150)
+WALL = (95, 95, 100)
 WHITE = (235, 235, 235)
 
 
@@ -56,6 +59,17 @@ class Arena:
             rect = (x, y, w, h)
             if all(not _overlap(rect, b, 25) for b in self.bushes):
                 self.bushes.append(rect)
+        self.walls = []
+        centre = (W / 2 - 40, H / 2 - 40, 80, 80)
+        tries = 0
+        while len(self.walls) < 3 and tries < 200:
+            tries += 1
+            horiz = self.rng.random() < 0.5
+            w, h = (self.rng.randint(90, 150), 18) if horiz else (18, self.rng.randint(90, 150))
+            x, y = self.rng.randint(30, W - w - 30), self.rng.randint(60, H - h - 30)
+            rect = (x, y, w, h)
+            if all(not _overlap(rect, b, 20) for b in self.bushes + self.walls + [centre]):
+                self.walls.append(rect)
         self.player = Body(W / 2, H / 2, 12)
         self.enemies: list[Body] = []
         self.coins: list[Body] = []
@@ -69,6 +83,18 @@ class Arena:
         self.spawn_timer = 1.0
         self.fire_timer = 0.0
         self.hurt_timer = 0.0
+
+    def blocked(self, x: float, y: float, r: float) -> bool:
+        return any(wx - r < x < wx + ww + r and wy - r < y < wy + wh + r
+                   for wx, wy, ww, wh in self.walls)
+
+    def _move(self, b: Body, dx: float, dy: float):
+        nx = min(max(b.x + dx, b.r), W - b.r)
+        if not self.blocked(nx, b.y, b.r):
+            b.x = nx
+        ny = min(max(b.y + dy, b.r), H - b.r)
+        if not self.blocked(b.x, ny, b.r):
+            b.y = ny
 
     def in_bush(self, b: Body) -> bool:
         return any(x <= b.x <= x + w and y <= b.y <= y + h for x, y, w, h in self.bushes)
@@ -87,8 +113,7 @@ class Arena:
         n = math.hypot(mx, my)
         if n > 1:
             mx, my = mx / n, my / n
-        p.x = min(max(p.x + mx * self.PLAYER_SPEED * dt, p.r), W - p.r)
-        p.y = min(max(p.y + my * self.PLAYER_SPEED * dt, p.r), H - p.r)
+        self._move(p, mx * self.PLAYER_SPEED * dt, my * self.PLAYER_SPEED * dt)
 
         self.fire_timer -= dt
         for cx, cy in clicks:
@@ -104,7 +129,9 @@ class Arena:
             if len(self.enemies) < self.MAX_ENEMIES:
                 self.enemies.append(self._edge_spawn())
             if len(self.coins) < 3:
-                self.coins.append(Body(self.rng.uniform(30, W - 30), self.rng.uniform(50, H - 30), 7))
+                cx, cy = self.rng.uniform(30, W - 30), self.rng.uniform(50, H - 30)
+                if not self.blocked(cx, cy, 10):
+                    self.coins.append(Body(cx, cy, 7))
 
         hidden = self.in_bush(p)
         for e in self.enemies:
@@ -115,13 +142,13 @@ class Arena:
             elif self.rng.random() < 0.02:  # lost you: wander
                 a = self.rng.uniform(0, 2 * math.pi)
                 e.vx, e.vy = math.cos(a) * self.ENEMY_SPEED * 0.6, math.sin(a) * self.ENEMY_SPEED * 0.6
-            e.x = min(max(e.x + e.vx * dt, e.r), W - e.r)
-            e.y = min(max(e.y + e.vy * dt, e.r), H - e.r)
+            self._move(e, e.vx * dt, e.vy * dt)
 
         for b in self.bullets:
             b.x += b.vx * dt
             b.y += b.vy * dt
-        self.bullets = [b for b in self.bullets if 0 <= b.x <= W and 0 <= b.y <= H]
+        self.bullets = [b for b in self.bullets
+                        if 0 <= b.x <= W and 0 <= b.y <= H and not self.blocked(b.x, b.y, 0)]
         for b in list(self.bullets):
             for e in list(self.enemies):
                 if _touch(b, e):
@@ -167,6 +194,8 @@ class Arena:
         surface.fill(BG)
         for x, y, w, h in self.bushes:
             pygame.draw.rect(surface, BUSH, (x, y, w, h), border_radius=10)
+        for wall in self.walls:
+            pygame.draw.rect(surface, WALL, wall)
         for c in self.coins:
             pygame.draw.circle(surface, COIN, (int(c.x), int(c.y)), int(c.r))
         for e in self.enemies:

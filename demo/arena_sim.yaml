@@ -3,7 +3,10 @@
 
 source: {type: python, factory: "bridge:make_sim", seed: 0}
 input: {type: source}
-run: {fps: 20, realtime: false}
+run:
+  fps: 20
+  realtime: false
+  stuck: {min_speed: 25}   # moving slower than this (px/s) while trying to move = stuck
 
 anchor: player          # distances/directions are measured from this label ("me")
 
@@ -22,6 +25,9 @@ flow:
       do: [{key: r}]
       goto: hide
       cooldown: 1.0
+    - name: stuck on something we can't see (walls are not detected)
+      when: stuck_time > 0.4 and state != "unstick"
+      goto: unstick
 
   states:
     hide:                                   # sit in the nearest bush
@@ -50,3 +56,10 @@ flow:
           do: [{move_away: enemy.nearest}, {click: enemy.nearest, cooldown: 0.3}]
         - name: shoot from cover
           do: [{click: enemy.nearest, cooldown: 0.3}, {move_toward: bush.nearest}]
+
+    unstick:                                # slide sideways for a moment, then carry on
+      on_enter: [{set: {ux: "-last_move.y", uy: "last_move.x"}}]
+      rules:
+        - when: state_time > 0.6
+          goto: hide
+        - do: [{move: "[vars.ux, vars.uy]"}]

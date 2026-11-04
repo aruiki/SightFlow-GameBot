@@ -56,8 +56,16 @@ class SimBridge:
     def tap(self, key):
         self._keys.append(str(key).lower())
 
+    def hold(self, key, seconds):
+        self._keys.append(str(key).lower())
+
     def click(self, x, y):
         self._clicks.append((x, y))
+
+    def drag(self, fx, fy, tx, ty, seconds=0.15):
+        """Touch-style aim: fire from the player in the swipe direction."""
+        p = self.game.player
+        self._clicks.append((p.x + (tx - fx) * 10, p.y + (ty - fy) * 10))
 
 
 def make_sim(seed: int = 0, dt: float = 0.05):

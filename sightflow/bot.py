@@ -11,6 +11,7 @@ from .detection import Detection, LabelGroup
 from .detectors import build_detectors
 from .flow import Flow, TickResult
 from .io import build_input, build_source
+from .motion import MotionTracker
 
 
 def _merge(base: dict, over: dict) -> dict:
@@ -71,6 +72,9 @@ class Bot:
         run = cfg.get("run", {})
         self.fps = float(run.get("fps", 20))
         self.realtime = bool(run.get("realtime", True))
+        st = run.get("stuck", {}) or {}
+        self.motion = MotionTracker(min_speed=float(st.get("min_speed", 25)),
+                                    camera=bool(st.get("camera_motion", True)))
         self.last_frame = None
         self.last_groups: dict[str, LabelGroup] = {}
         self.last_me = None
@@ -89,13 +93,20 @@ class Bot:
         frame = self.source.grab()
         now = self.source.time()
         groups, me = self.perceive(frame)
-        res = self.flow.tick(groups, me, now, extra={"frame": frame_info(frame)})
+        self.motion.update(frame, me, now)
+        extra = {"frame": frame_info(frame), **self.motion.names()}
+        res = self.flow.tick(groups, me, now, extra=extra)
         it = res.intents
+        self.motion.after_decision(it.move)
         self.input.set_move(it.move)
         for k in it.taps:
             self.input.tap(k)
+        for k, secs in it.holds:
+            self.input.hold(k, secs)
         for x, y in it.clicks:
             self.input.click(x, y)
+        for fx, fy, tx, ty, secs in it.drags:
+            self.input.drag(fx, fy, tx, ty, secs)
         for msg in it.logs:
             print(f"[{now:8.2f}] {res.state}: {msg}")
         self.last_frame, self.last_groups, self.last_me, self.last_result = frame, groups, me, res
@@ -135,7 +146,8 @@ class Bot:
                     break
                 if overlay:
                     img = ov.draw(self.last_frame, self.last_groups, self.last_me, res.state,
-                                  res.rule, fps_est, res.intents.move, res.intents.clicks)
+                                  res.rule, fps_est, res.intents.move, res.intents.clicks,
+                                  res.intents.drags, self.motion)
                     cv2.imshow("sightflow debug", img)
                     if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
                         break
@@ -159,7 +171,7 @@ class Bot:
 
         r = self.last_result
         return ov.draw(self.last_frame, self.last_groups, self.last_me, r.state, r.rule,
-                       None, r.intents.move, r.intents.clicks)
+                       None, r.intents.move, r.intents.clicks, r.intents.drags, self.motion)
 
     def close(self):
         self.input.close()

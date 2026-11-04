@@ -39,11 +39,17 @@ def build_detectors(specs: list[dict], base_dir: Path) -> list["Detector"]:
 
 
 class Detector:
-    """Base class. Handles the optional `roi: [x, y, w, h]` crop and `max_count`."""
+    """Base class. Handles options shared by every detector:
+
+    roi: [x, y, w, h]   only search this part of the frame
+    offset: [dx, dy]    shift each result, e.g. from a health bar down to the body
+    max_count: n        keep only the n best results
+    """
 
     def __init__(self, spec: dict, base_dir: Path):
         self.spec = spec
         self.roi = spec.get("roi")
+        self.offset = spec.get("offset") or (0, 0)
         self.max_count = spec.get("max_count")
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
@@ -55,8 +61,8 @@ class Detector:
             ox, oy = x, y
         dets = self._detect(img)
         for d in dets:
-            d.x += ox
-            d.y += oy
+            d.x += ox + self.offset[0]
+            d.y += oy + self.offset[1]
         if self.max_count is not None:
             dets = sorted(dets, key=lambda d: (d.score, d.area), reverse=True)[: self.max_count]
         return dets
@@ -71,6 +77,8 @@ class ColorDetector(Detector):
 
     hsv: [[h_lo, s_lo, v_lo], [h_hi, s_hi, v_hi]]   (OpenCV scale: H 0-179)
          or a list of such pairs (e.g. red wraps around H=0/179).
+    min_area / max_area: blob size limits in pixels
+    aspect: [lo, hi]   allowed width/height ratio (health bars are wide: [3, 15])
     """
 
     def __init__(self, spec, base_dir):
@@ -83,6 +91,7 @@ class ColorDetector(Detector):
         self.min_area = float(spec.get("min_area", 30))
         self.max_area = float(spec.get("max_area", float("inf")))
         self.morph = int(spec.get("morph", 3))
+        self.aspect = spec.get("aspect")
 
     def _detect(self, img):
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -99,6 +108,8 @@ class ColorDetector(Detector):
             if not (self.min_area <= area <= self.max_area):
                 continue
             x, y, w, h = cv2.boundingRect(c)
+            if self.aspect and not (self.aspect[0] <= w / max(h, 1) <= self.aspect[1]):
+                continue
             fill = area / max(w * h, 1)
             out.append(Detection(self.label, x + w / 2, y + h / 2, w, h, score=round(fill, 3)))
         return out

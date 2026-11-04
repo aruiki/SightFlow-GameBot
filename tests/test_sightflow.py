@@ -145,3 +145,97 @@ def test_demo_bot_survives_and_scores():
         bot.step()
     assert not game.game_over
     assert game.score > 10
+
+
+# ------------------------------------------------------------------ new actions
+class _Frame:
+    w, h = 400, 200
+
+
+def _tick_one(action, me=(100, 100), enemy=(200, 100)):
+    from sightflow.detection import LabelGroup
+    f = Flow({"states": {"s": {"rules": [{"do": [action]}]}}})
+    e = Detection("enemy", *enemy, 10, 10)
+    m = Detection("player", *me, 10, 10)
+    return f.tick({"enemy": LabelGroup("enemy", [e])}, m, 0.0, extra={"frame": _Frame()}).intents
+
+
+def test_aim_drags_from_button_toward_target():
+    it = _tick_one({"aim": {"button": [0.9, 0.8], "target": "enemy.nearest", "length": 50}})
+    fx, fy, tx, ty, secs = it.drags[0]
+    assert (fx, fy) == pytest.approx((360, 160))          # fractions of the frame
+    assert (tx, ty) == pytest.approx((410, 160))          # 50px to the right (enemy is right of me)
+    assert secs == pytest.approx(0.15)
+
+
+def test_drag_hold_move():
+    it = _tick_one({"drag": {"from": [10, 10], "to": "enemy.nearest", "seconds": 0.2}})
+    assert it.drags == [(10, 10, 200, 100, 0.2)]
+    assert _tick_one({"hold": {"key": "e", "seconds": 0.5}}).holds == [("e", 0.5)]
+    assert _tick_one({"move": [0, -3]}).move == pytest.approx((0, -1))
+    with pytest.raises(ValueError):
+        _tick_one({"aim": {"button": [1, 1]}})              # target missing
+
+
+def test_detector_offset_and_aspect():
+    img = np.full((100, 200, 3), 30, np.uint8)
+    cv2.rectangle(img, (20, 20), (79, 27), (40, 200, 40), -1)   # wide green bar 60x8
+    cv2.rectangle(img, (120, 20), (139, 39), (40, 200, 40), -1)  # green square 20x20
+    spec = {"type": "color", "label": "bar", "hsv": [[50, 150, 150], [70, 255, 255]],
+            "aspect": [3, 15], "offset": [0, 30]}
+    dets = build_detectors([spec], ROOT)[0].detect(img)
+    assert len(dets) == 1
+    assert (dets[0].x, dets[0].y) == pytest.approx((50, 54), abs=1)
+
+
+# ------------------------------------------------------------------ motion / stuck
+def _texture(seed=0, size=(240, 320)):
+    rng = np.random.default_rng(seed)
+    small = rng.integers(0, 255, (size[0] // 8, size[1] // 8, 3), np.uint8)
+    return cv2.resize(small, (size[1], size[0]), interpolation=cv2.INTER_NEAREST)
+
+
+def test_stuck_when_trying_to_move_but_not_moving():
+    from sightflow.motion import MotionTracker
+    m = MotionTracker(min_speed=25)
+    bg = _texture()
+    me = Detection("player", 160, 120, 10, 10)
+    for i in range(10):
+        m.update(bg, me, i * 0.05)
+        m.after_decision((1.0, 0.0))                      # keep pushing right
+    assert m.stuck_time == pytest.approx(0.45, abs=0.06)
+    m.after_decision(None)                                # standing still is not stuck
+    m.update(bg, me, 0.55)
+    assert m.stuck_time == 0
+
+
+def test_not_stuck_when_me_moves_on_fixed_camera():
+    from sightflow.motion import MotionTracker
+    m = MotionTracker(min_speed=25)
+    bg = _texture()
+    for i in range(10):
+        m.update(bg, Detection("player", 50 + i * 5, 120, 10, 10), i * 0.05)   # 100 px/s
+        m.after_decision((1.0, 0.0))
+    assert m.stuck_time == 0 and m.speed > 60
+
+
+def test_not_stuck_when_camera_follows_me():
+    from sightflow.motion import MotionTracker
+    m = MotionTracker(min_speed=25)
+    big = _texture(1, (240, 640))
+    me = Detection("player", 160, 120, 10, 10)              # always centred on screen
+    for i in range(10):
+        frame = np.ascontiguousarray(big[:, i * 8: i * 8 + 320])  # world scrolls left 8px/tick
+        m.update(frame, me, i * 0.05)
+        m.after_decision((1.0, 0.0))
+    assert m.stuck_time == 0
+    assert m.speed == pytest.approx(160, rel=0.3)           # 8px / 0.05s
+
+
+def test_example_configs_parse():
+    for path in sorted((ROOT / "examples").glob("*.yaml")):
+        cfg, base = load_config(path)
+        Flow(cfg["flow"])
+        dets = build_detectors(cfg["detectors"], base)
+        for d in dets:
+            d.detect(np.zeros((360, 640, 3), np.uint8))

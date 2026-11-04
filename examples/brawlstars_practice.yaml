@@ -1,0 +1,86 @@
+# STARTING POINT for a practice match vs bots, running in an emulator window.
+# NOTHING HERE IS TUNED YET - every number marked TUNE must be measured on
+# your own screen first (see "How to tune" at the bottom).
+#
+# Brawl Stars' terms forbid automation tools in any mode, so even practice
+# matches can get an account banned. Use a secondary account.
+
+source: {type: window, title: "BlueStacks"}           # TUNE: part of your emulator's window title
+input:
+  type: keyboard_mouse
+  move_keys: {up: w, down: s, left: a, right: d}     # emulator key mapping for the joystick
+run:
+  fps: 15
+  stuck: {min_speed: 30, camera_motion: true}        # camera follows you, so measure world scroll
+
+anchor: me
+
+# Health bars are far easier to detect than the characters themselves:
+# yours is green, enemies' are red (teammates' are blue). `offset` moves the
+# point from the bar down to the body. Bars are wide and thin -> `aspect`.
+detectors:
+  - type: color
+    label: me
+    hsv: [[45, 150, 150], [75, 255, 255]]            # TUNE with: sightflow pick shot.png
+    aspect: [3, 20]
+    min_area: 60
+    offset: [0, 40]                                  # TUNE: bar -> body, in pixels
+    max_count: 1
+  - type: color
+    label: enemy
+    hsv: [[[0, 150, 150], [8, 255, 255]], [[172, 150, 150], [179, 255, 255]]]   # TUNE
+    aspect: [3, 20]
+    min_area: 60
+    offset: [0, 40]
+  # Post-match "play again" button: crop it from a screenshot and uncomment.
+  # - {type: template, label: play_again, image: sprites/play_again.png, threshold: 0.85}
+
+flow:
+  initial: advance
+  global:
+    # - {when: play_again.any, do: [{click: play_again.best}], cooldown: 3}
+    - name: unstick
+      when: stuck_time > 0.6 and state != "unstick"
+      goto: unstick
+
+  states:
+    advance:                                         # walk toward the enemy side
+      rules:
+        - when: enemy.within(450) > 0
+          goto: fight
+        - do: [{move: [0, -1]}]                      # TUNE: "up" = enemy side in most 3v3 maps
+
+    fight:
+      rules:
+        - when: not enemy.any
+          goto: advance
+        - name: too close - kite back while shooting
+          when: enemy.nearest.distance < 200
+          do:
+            - {move_away: enemy.nearest}
+            - {aim: {button: [0.88, 0.78], target: enemy.nearest, length: 120}, cooldown: 0.5}  # TUNE button
+        - name: in range - shoot
+          when: enemy.nearest.distance < 450
+          do:
+            - {aim: {button: [0.88, 0.78], target: enemy.nearest, length: 120}, cooldown: 0.5}
+        # Simpler alternative if your emulator maps auto-aim attack to a key:
+        #   do: [{key: space, cooldown: 0.5}]
+        - do: [{move_toward: enemy.nearest}]
+
+    unstick:
+      on_enter: [{set: {ux: "-last_move.y", uy: "last_move.x"}}]
+      rules:
+        - when: state_time > 0.7
+          goto: advance
+        - do: [{move: "[vars.ux, vars.uy]"}]
+
+# How to tune (about 15 minutes):
+#   1. Start a practice match, then:  python -m sightflow grab examples/brawlstars_practice.yaml -o shot.png
+#   2. python -m sightflow pick shot.png
+#        click your health bar, an enemy's bar, and the attack button -> note HSV / (x, y)
+#        button positions can be written as fractions of the window: x / width, y / height
+#   3. Edit the TUNE values, then check boxes land on the right things:
+#        python -m sightflow detect examples/brawlstars_practice.yaml shot.png -o check.png
+#   4. Watch decisions without sending input:
+#        python -m sightflow run examples/brawlstars_practice.yaml --dry-run
+#   5. Only then run without --dry-run. F12 stops.
