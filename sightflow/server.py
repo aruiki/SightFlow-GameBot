@@ -54,6 +54,24 @@ def detector_specs(det: dict) -> list[dict]:
     raise ValueError(f"unknown detector type {kind!r}")
 
 
+def new_project(name: str) -> dict:
+    """An empty project: YOLO-World on a window, no nodes yet."""
+    return {
+        "name": name,
+        "settings": {
+            "source": {"type": "window", "title": ""},
+            "detector": {"type": "yolo_world", "model": "yolov8s-worldv2.pt", "conf": 0.25, "imgsz": 640,
+                         "classes": [{"label": "player", "prompt": "player character"},
+                                     {"label": "enemy", "prompt": "enemy character"}]},
+            "anchor": "player",
+            "input": {"move_keys": {"up": "w", "down": "s", "left": "a", "right": "d"}},
+            "fps": 15,
+            "stuck_min_speed": 25,
+        },
+        "graph": {"nodes": [], "edges": []},
+    }
+
+
 def _labels_of(d) -> list[str]:
     if hasattr(d, "labels"):
         return list(d.labels)
@@ -309,7 +327,9 @@ def serve(project: str | None, host: str, port: int):
 
     path = Path(project).resolve() if project else DEFAULT_PROJECT
     if not path.exists():
-        raise SystemExit(f"project not found: {path}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(new_project(path.stem), ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"created a new project: {path}")
     if not DIST.exists():
         print("note: web UI not built yet -> cd webui && npm install && npm run build")
     print(f"SightFlow: http://{host}:{port}   project: {path}")

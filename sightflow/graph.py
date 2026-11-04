@@ -33,6 +33,14 @@ CATEGORIES = {
 
 FIELDS = ["distance", "x", "y", "w", "h", "id", "score", "angle", "exists"]
 
+IO_NAMES = {
+    "list": "リスト", "object": "物体", "count": "数", "any": "ある", "run": "実行", "target": "対象",
+    "a": "a", "b": "b", "result": "結果", "value": "値", "in": "入力", "out": "出力", "me": "自分",
+    "found": "見つかった", "speed": "速度", "stuck_time": "引っかかり秒", "stuck": "引っかかり", "t": "秒",
+    "radius": "半径", "id": "ID", "set": "記憶する", "switched": "切り替えた",
+}
+TYPE_NAMES = {"list": "リスト", "object": "物体", "number": "数", "bool": "はい/いいえ", "any": "なんでも"}
+
 
 @dataclass
 class NodeType:
@@ -171,6 +179,24 @@ def _by_id(ctx, i, p, s):
     want = int(_num(i.get("id"), -1))
     d = next((d for d in (i.get("list") or []) if d.id == want), missing("?"))
     return {"object": d, "found": d.exists}, _desc(d)
+
+
+@node("lock_on", "pick", "ロックオン", "一度選んだ物体を追跡IDで追い続ける。見失ったら一番近いものに乗り換え",
+      inputs=[("list", "list")], outputs=[("object", "object"), ("found", "bool"), ("switched", "bool")],
+      props=[P("grace", "number", 0.5, "見失い猶予(秒)")])
+def _lock_on(ctx, i, p, s):
+    lst = i.get("list") or []
+    cur = next((d for d in lst if d.id == s.get("id")), None) if "id" in s else None
+    switched = False
+    if cur is not None:
+        s["seen"] = ctx.now
+    elif lst and ctx.now - s.get("seen", -math.inf) >= _num(p["grace"], 0.5):
+        cur = lst[0]                      # nearest
+        switched = s.get("id") != cur.id
+        s["id"], s["seen"] = cur.id, ctx.now
+    d = cur if cur is not None else missing("?")
+    return {"object": d, "found": d.exists, "switched": switched}, \
+        (f"ロック中 {_desc(d)}" if d.exists else ("見失い中" if "id" in s else "なし"))
 
 
 @node("field", "pick", "値を取り出す", "物体の距離・座標・ID などを数値で取り出す",
@@ -483,4 +509,29 @@ class Graph:
 
 
 def node_types_json():
-    return {"categories": CATEGORIES, "types": [t.to_json() for t in NODE_TYPES.values()]}
+    return {"categories": CATEGORIES, "io_names": IO_NAMES, "type_names": TYPE_NAMES,
+            "types": [t.to_json() for t in NODE_TYPES.values()]}
+
+
+def nodes_markdown() -> str:
+    """Node reference for docs/nodes.md, generated from NODE_TYPES so it never
+    drifts from the code (a test checks the file is up to date)."""
+    out = ["# ノード一覧", "",
+           "> このファイルは `python -m sightflow nodes-doc > docs/nodes.md` で自動生成しています。",
+           "> 手で編集せず、`sightflow/graph.py` のノード定義を変えてから作り直してください。", "",
+           "線（データ）の種類: " + " / ".join(f"**{v}**" for v in TYPE_NAMES.values()) + "。",
+           "入力が未接続のときは、同じ名前の設定値（あれば）か、既定値（操作ノードの「実行」は常に はい）が使われます。", ""]
+    for key, cat in CATEGORIES.items():
+        out += [f"## {cat['title']}", ""]
+        for t in (t for t in NODE_TYPES.values() if t.category == key):
+            out += [f"### {t.title}  `{t.type}`", "", t.desc, ""]
+            if t.inputs:
+                out.append("- 入力: " + "、".join(f"{IO_NAMES.get(n, n)}（{TYPE_NAMES[ty]}）" for n, ty in t.inputs))
+            if t.outputs:
+                out.append("- 出力: " + "、".join(f"{IO_NAMES.get(n, n)}（{TYPE_NAMES[ty]}）" for n, ty in t.outputs))
+            for pr in t.props:
+                extra = f"（{' / '.join(pr['options'])}）" if pr.get("options") else ""
+                dflt = "" if pr["default"] in (None, "") else f"、既定 `{pr['default']}`"
+                out.append(f"- 設定「{pr['label']}」{extra}{dflt}")
+            out.append("")
+    return "\n".join(out).rstrip() + "\n"

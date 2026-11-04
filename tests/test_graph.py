@@ -142,3 +142,27 @@ def test_demo_project_runs_headless():
             inp.drag(*d)
     assert all(v["error"] is None for v in st.values())
     assert not game.game_over and game.score > 15
+
+
+def test_lock_on_keeps_target_then_switches_after_grace():
+    gr = g([("e", "objects", {"label": "enemy"}), ("l", "lock_on", {"grace": 0.5}), ("go", "move_toward", {})],
+           [("e", "list", "l", "list"), ("l", "object", "go", "target")])
+    c = ctx([(200, 100), (100, 300)])              # id1 nearest (100px)
+    gr.tick(c)
+    assert c.intents.move == pytest.approx((1, 0))
+    c = ctx([(400, 100), (100, 150)], now=0.2)     # id2 now nearer -> stay locked on id1
+    gr.tick(c)
+    assert c.intents.move == pytest.approx((1, 0))
+    c = ctx([(100, 150)], now=0.3)                 # id1 gone ... within grace: wait
+    c.groups["enemy"].items[0].id = 2
+    gr.tick(c)
+    assert c.intents.move is None
+    c = ctx([(100, 150)], now=0.9)                 # grace over -> switch to the nearest (id1 in this ctx)
+    st = gr.tick(c)
+    assert c.intents.move == pytest.approx((0, 1)) and "ロック中" in st["l"]["text"]
+
+
+def test_nodes_doc_is_up_to_date():
+    from sightflow.graph import nodes_markdown
+    doc = (ROOT / "docs" / "nodes.md").read_text(encoding="utf-8")
+    assert doc == nodes_markdown(), "run: python -m sightflow nodes-doc > docs/nodes.md"

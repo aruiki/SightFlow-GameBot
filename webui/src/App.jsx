@@ -88,6 +88,7 @@ function Editor() {
       metaStore.set((m) => ({
         ...m,
         categories: types.categories,
+        ioNames: types.io_names,
         defs: Object.fromEntries(types.types.map((t) => [t.type, t])),
       }))
       const st = await refreshState()
@@ -236,6 +237,11 @@ function Editor() {
             {{ idle: '待機', loading: '読み込み中', running: '準備OK', error: 'エラー' }[srvStatus.status]}
           </span>
           <span className={`pill ${saved ? 'ok' : 'saving'}`}>{saved ? '保存済み' : '保存中…'}</span>
+          <button className="ghost" onClick={() => {
+            if (nodes.length && !window.confirm('キャンバスのノードをすべて消して、新しく作り始めますか？\n（先に「書き出し」で保存しておくと安心です）')) return
+            setNodes([])
+            setEdges([])
+          }}>新規</button>
           <button className="ghost" onClick={exportProject}>書き出し</button>
           <label className="ghost file">
             読み込み
