@@ -12,6 +12,7 @@ license = {text = "MIT"}
 dependencies = ["numpy", "opencv-python", "pyyaml", "mss", "pynput"]
 
 [project.optional-dependencies]
+web = ["fastapi", "uvicorn[standard]"]
 yolo = ["ultralytics"]
 demo = ["pygame"]
 dev = ["pytest", "pygame"]

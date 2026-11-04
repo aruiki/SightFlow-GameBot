@@ -1,0 +1,481 @@
+{
+  "name": "Bush Arena デモ",
+  "settings": {
+    "source": {
+      "type": "demo",
+      "seed": 0
+    },
+    "detector": {
+      "type": "color",
+      "color": [
+        {
+          "type": "color",
+          "label": "player",
+          "hsv": [
+            [
+              100,
+              150,
+              150
+            ],
+            [
+              118,
+              255,
+              255
+            ]
+          ],
+          "min_area": 150
+        },
+        {
+          "type": "color",
+          "label": "enemy",
+          "hsv": [
+            [
+              [
+                0,
+                150,
+                120
+              ],
+              [
+                8,
+                255,
+                255
+              ]
+            ],
+            [
+              [
+                172,
+                150,
+                120
+              ],
+              [
+                179,
+                255,
+                255
+              ]
+            ]
+          ],
+          "min_area": 150
+        },
+        {
+          "type": "color",
+          "label": "bush",
+          "hsv": [
+            [
+              55,
+              120,
+              90
+            ],
+            [
+              75,
+              255,
+              190
+            ]
+          ],
+          "min_area": 1500
+        },
+        {
+          "type": "color",
+          "label": "coin",
+          "hsv": [
+            [
+              20,
+              200,
+              200
+            ],
+            [
+              30,
+              255,
+              255
+            ]
+          ],
+          "min_area": 40
+        },
+        {
+          "type": "color",
+          "label": "gameover",
+          "hsv": [
+            [
+              145,
+              150,
+              100
+            ],
+            [
+              155,
+              255,
+              200
+            ]
+          ],
+          "min_area": 8000
+        }
+      ],
+      "model": "yolov8s-worldv2.pt",
+      "conf": 0.2,
+      "imgsz": 640,
+      "classes": [
+        {
+          "label": "person",
+          "prompt": "person"
+        }
+      ]
+    },
+    "anchor": "player",
+    "input": {
+      "move_keys": {
+        "up": "w",
+        "down": "s",
+        "left": "a",
+        "right": "d"
+      }
+    },
+    "fps": 20,
+    "stuck_min_speed": 25
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "enemy",
+        "type": "objects",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "data": {
+          "label": "enemy"
+        }
+      },
+      {
+        "id": "enemy_near",
+        "type": "nearest",
+        "position": {
+          "x": 260,
+          "y": 0
+        },
+        "data": {}
+      },
+      {
+        "id": "enemy_dist",
+        "type": "field",
+        "position": {
+          "x": 500,
+          "y": 0
+        },
+        "data": {
+          "field": "distance"
+        }
+      },
+      {
+        "id": "in_range",
+        "type": "compare",
+        "position": {
+          "x": 760,
+          "y": -80
+        },
+        "data": {
+          "op": "<",
+          "b": 320
+        }
+      },
+      {
+        "id": "too_close",
+        "type": "compare",
+        "position": {
+          "x": 760,
+          "y": 90
+        },
+        "data": {
+          "op": "<",
+          "b": 70
+        }
+      },
+      {
+        "id": "enemy_far",
+        "type": "compare",
+        "position": {
+          "x": 760,
+          "y": 260
+        },
+        "data": {
+          "op": ">",
+          "b": 200
+        }
+      },
+      {
+        "id": "shoot",
+        "type": "aim",
+        "position": {
+          "x": 1040,
+          "y": -100
+        },
+        "data": {
+          "cooldown": 0.3
+        }
+      },
+      {
+        "id": "back_off",
+        "type": "move_away",
+        "position": {
+          "x": 1040,
+          "y": 110
+        },
+        "data": {
+          "priority": 3
+        }
+      },
+      {
+        "id": "coin",
+        "type": "objects",
+        "position": {
+          "x": 0,
+          "y": 400
+        },
+        "data": {
+          "label": "coin"
+        }
+      },
+      {
+        "id": "coin_near",
+        "type": "nearest",
+        "position": {
+          "x": 260,
+          "y": 400
+        },
+        "data": {}
+      },
+      {
+        "id": "get_coin",
+        "type": "move_toward",
+        "position": {
+          "x": 1040,
+          "y": 320
+        },
+        "data": {
+          "priority": 2
+        }
+      },
+      {
+        "id": "bush",
+        "type": "objects",
+        "position": {
+          "x": 0,
+          "y": 560
+        },
+        "data": {
+          "label": "bush"
+        }
+      },
+      {
+        "id": "bush_near",
+        "type": "nearest",
+        "position": {
+          "x": 260,
+          "y": 560
+        },
+        "data": {}
+      },
+      {
+        "id": "hide",
+        "type": "move_toward",
+        "position": {
+          "x": 1040,
+          "y": 520
+        },
+        "data": {
+          "priority": 1
+        }
+      },
+      {
+        "id": "motion",
+        "type": "motion",
+        "position": {
+          "x": 500,
+          "y": 720
+        },
+        "data": {
+          "after": 0.4
+        }
+      },
+      {
+        "id": "keep",
+        "type": "hold_true",
+        "position": {
+          "x": 760,
+          "y": 720
+        },
+        "data": {
+          "seconds": 0.6
+        }
+      },
+      {
+        "id": "dodge",
+        "type": "dodge",
+        "position": {
+          "x": 1040,
+          "y": 700
+        },
+        "data": {
+          "priority": 9
+        }
+      },
+      {
+        "id": "gameover",
+        "type": "objects",
+        "position": {
+          "x": 0,
+          "y": 880
+        },
+        "data": {
+          "label": "gameover"
+        }
+      },
+      {
+        "id": "restart",
+        "type": "key",
+        "position": {
+          "x": 1040,
+          "y": 880
+        },
+        "data": {
+          "key": "r",
+          "cooldown": 1.0
+        }
+      },
+      {
+        "id": "dbg",
+        "type": "debug",
+        "position": {
+          "x": 500,
+          "y": -180
+        },
+        "data": {}
+      }
+    ],
+    "edges": [
+      {
+        "id": "enemy.list-enemy_near.list",
+        "source": "enemy",
+        "sourceHandle": "list",
+        "target": "enemy_near",
+        "targetHandle": "list"
+      },
+      {
+        "id": "enemy_near.object-enemy_dist.object",
+        "source": "enemy_near",
+        "sourceHandle": "object",
+        "target": "enemy_dist",
+        "targetHandle": "object"
+      },
+      {
+        "id": "enemy_dist.value-in_range.a",
+        "source": "enemy_dist",
+        "sourceHandle": "value",
+        "target": "in_range",
+        "targetHandle": "a"
+      },
+      {
+        "id": "enemy_dist.value-too_close.a",
+        "source": "enemy_dist",
+        "sourceHandle": "value",
+        "target": "too_close",
+        "targetHandle": "a"
+      },
+      {
+        "id": "enemy_dist.value-enemy_far.a",
+        "source": "enemy_dist",
+        "sourceHandle": "value",
+        "target": "enemy_far",
+        "targetHandle": "a"
+      },
+      {
+        "id": "in_range.result-shoot.run",
+        "source": "in_range",
+        "sourceHandle": "result",
+        "target": "shoot",
+        "targetHandle": "run"
+      },
+      {
+        "id": "enemy_near.object-shoot.target",
+        "source": "enemy_near",
+        "sourceHandle": "object",
+        "target": "shoot",
+        "targetHandle": "target"
+      },
+      {
+        "id": "too_close.result-back_off.run",
+        "source": "too_close",
+        "sourceHandle": "result",
+        "target": "back_off",
+        "targetHandle": "run"
+      },
+      {
+        "id": "enemy_near.object-back_off.target",
+        "source": "enemy_near",
+        "sourceHandle": "object",
+        "target": "back_off",
+        "targetHandle": "target"
+      },
+      {
+        "id": "coin.list-coin_near.list",
+        "source": "coin",
+        "sourceHandle": "list",
+        "target": "coin_near",
+        "targetHandle": "list"
+      },
+      {
+        "id": "coin_near.object-get_coin.target",
+        "source": "coin_near",
+        "sourceHandle": "object",
+        "target": "get_coin",
+        "targetHandle": "target"
+      },
+      {
+        "id": "enemy_far.result-get_coin.run",
+        "source": "enemy_far",
+        "sourceHandle": "result",
+        "target": "get_coin",
+        "targetHandle": "run"
+      },
+      {
+        "id": "bush.list-bush_near.list",
+        "source": "bush",
+        "sourceHandle": "list",
+        "target": "bush_near",
+        "targetHandle": "list"
+      },
+      {
+        "id": "bush_near.object-hide.target",
+        "source": "bush_near",
+        "sourceHandle": "object",
+        "target": "hide",
+        "targetHandle": "target"
+      },
+      {
+        "id": "motion.stuck-keep.in",
+        "source": "motion",
+        "sourceHandle": "stuck",
+        "target": "keep",
+        "targetHandle": "in"
+      },
+      {
+        "id": "keep.out-dodge.run",
+        "source": "keep",
+        "sourceHandle": "out",
+        "target": "dodge",
+        "targetHandle": "run"
+      },
+      {
+        "id": "gameover.any-restart.run",
+        "source": "gameover",
+        "sourceHandle": "any",
+        "target": "restart",
+        "targetHandle": "run"
+      },
+      {
+        "id": "enemy.list-dbg.in",
+        "source": "enemy",
+        "sourceHandle": "list",
+        "target": "dbg",
+        "targetHandle": "in"
+      }
+    ]
+  }
+}

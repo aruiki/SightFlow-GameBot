@@ -115,6 +115,59 @@ class ScreenSource(FrameSource):
         self.sct.close()
 
 
+class VideoSource(FrameSource):
+    """A video file, played in a loop at its own frame rate. Good for checking a
+    detector on recorded gameplay before touching the real game."""
+
+    def __init__(self, path: Path):
+        self.cap = cv2.VideoCapture(str(path))
+        if not self.cap.isOpened():
+            raise FileNotFoundError(path)
+        self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 30
+        self.frame_i = 0
+
+    def grab(self):
+        ok, frame = self.cap.read()
+        if not ok:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            self.frame_i = 0
+            ok, frame = self.cap.read()
+            if not ok:
+                raise RuntimeError("cannot read video")
+        self.frame_i += 1
+        return frame
+
+    def time(self):
+        return self.frame_i / self.fps
+
+    def close(self):
+        self.cap.release()
+
+
+def list_windows() -> list[str]:
+    """Titles of visible top-level windows (Windows only; [] elsewhere)."""
+    if sys.platform != "win32":
+        return []
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    titles = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    def cb(hwnd, _):
+        if user32.IsWindowVisible(hwnd):
+            n = user32.GetWindowTextLengthW(hwnd)
+            if n:
+                buf = ctypes.create_unicode_buffer(n + 1)
+                user32.GetWindowTextW(hwnd, buf, n + 1)
+                titles.append(buf.value)
+        return True
+
+    user32.EnumWindows(cb, 0)
+    return sorted(set(titles))
+
+
 def load_factory(ref: str, base_dir: Path):
     mod_name, _, func = ref.partition(":")
     for p in (str(base_dir), str(Path.cwd())):
@@ -131,6 +184,8 @@ def build_source(spec: dict, base_dir: Path) -> FrameSource:
         return ScreenSource(region=spec.get("region"), monitor=spec.get("monitor", 1))
     if kind == "image":
         return ImageSource(base_dir / spec["path"])
+    if kind == "video":
+        return VideoSource(base_dir / spec["path"])
     if kind == "python":
         args = {k: v for k, v in spec.items() if k not in ("type", "factory")}
         return load_factory(spec["factory"], base_dir)(**args)

@@ -34,7 +34,12 @@ def load_config(path: str | Path) -> tuple[dict, Path]:
 def declared_labels(specs: list[dict]) -> list[str]:
     labels = []
     for s in specs:
-        labels += [s["label"]] if "label" in s else list(s.get("labels", {}))
+        if "label" in s:
+            labels.append(s["label"])
+        elif s.get("classes"):
+            labels += list(s["classes"])
+        else:
+            labels += list(s.get("labels") or {})
     return labels
 
 

@@ -16,6 +16,7 @@ class Detection:
     h: float
     score: float = 1.0
     exists: bool = True
+    id: int = -1          # tracking ID, stable across frames (-1 = untracked)
     # Filled in relative to the anchor ("me") when the context is built.
     dx: float = 0.0
     dy: float = 0.0
@@ -47,6 +48,12 @@ def missing(label: str) -> Detection:
     harmless: distance is inf, exists is False, so `enemy.nearest.distance < 100`
     is simply False instead of raising."""
     return Detection(label, 0.0, 0.0, 0.0, 0.0, 0.0, exists=False)
+
+
+def to_dict(d: Detection) -> dict:
+    return {"label": d.label, "id": d.id, "x": round(d.x, 1), "y": round(d.y, 1),
+            "w": round(d.w, 1), "h": round(d.h, 1), "score": round(d.score, 3),
+            "distance": None if d.distance == float("inf") else round(d.distance, 1)}
 
 
 @dataclass
