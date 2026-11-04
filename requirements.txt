@@ -3,5 +3,8 @@ opencv-python
 pyyaml
 mss
 pynput
-pygame        # demo only
-pytest        # tests only
+fastapi        # web UI
+uvicorn[standard]
+ultralytics    # YOLO / YOLO-World detectors (install CUDA PyTorch first for GPU)
+pygame         # demo only
+pytest         # tests only

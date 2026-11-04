@@ -144,9 +144,64 @@ class TemplateDetector(Detector):
         return out
 
 
+def _model_path(base_dir: Path, name: str) -> str:
+    """Looks for the weights next to the config, then in ./models; otherwise
+    returns the bare name so Ultralytics downloads it (into the working dir)."""
+    for cand in (base_dir / name, base_dir / "models" / name):
+        if cand.exists():
+            return str(cand)
+    return name
+
+
+def _device(spec):
+    dev = spec.get("device", "auto")
+    if dev == "auto":
+        try:
+            import torch
+
+            dev = "cuda:0" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            dev = "cpu"
+    return dev
+
+
+class _UltralyticsBase(Detector):
+    """Shared predict/track logic. With `track: true` (default) every result
+    carries a ByteTrack ID that stays stable while the object is visible."""
+
+    def _setup(self, spec):
+        self.conf = float(spec.get("conf", 0.25))
+        self.iou = float(spec.get("iou", 0.5))
+        self.imgsz = int(spec.get("imgsz", 640))
+        self.track = bool(spec.get("track", True))
+        self.device = _device(spec)
+
+    def _detect(self, img):
+        kw = dict(conf=self.conf, iou=self.iou, imgsz=self.imgsz, device=self.device, verbose=False)
+        if self.track:
+            res = self.model.track(img, persist=True, tracker="bytetrack.yaml", **kw)[0]
+        else:
+            res = self.model.predict(img, **kw)[0]
+        b = res.boxes
+        if b is None or len(b) == 0:
+            return []
+        ids = b.id.int().tolist() if b.id is not None else [-1] * len(b)
+        out = []
+        for box, cls, conf, tid in zip(b.xywh.tolist(), b.cls.int().tolist(), b.conf.tolist(), ids):
+            label = self.map.get(cls)
+            if label:
+                x, y, w, h = box
+                out.append(Detection(label, x, y, w, h, float(conf), id=int(tid)))
+        return out
+
+
 @register("yolo")
-class YoloDetector(Detector):
-    """labels: {flow_label: class_id_or_name}. Requires `pip install ultralytics`."""
+class YoloDetector(_UltralyticsBase):
+    """A trained YOLO model (YOLO11 / v8 ...), e.g. one you trained on your game.
+
+    model: path or name ("yolo11s.pt" = COCO pretrained)
+    labels: {flow_label: class_id_or_name}; omit to use all of the model's classes.
+    """
 
     def __init__(self, spec, base_dir):
         super().__init__(spec, base_dir)
@@ -154,23 +209,37 @@ class YoloDetector(Detector):
             from ultralytics import YOLO
         except ImportError as e:  # pragma: no cover - optional
             raise ImportError("yolo detector needs: pip install ultralytics") from e
-        model = spec["model"]
-        path = base_dir / model
-        self.model = YOLO(str(path) if path.exists() else model)
-        self.conf = float(spec.get("conf", 0.4))
+        self.model = YOLO(_model_path(base_dir, spec.get("model", "yolo11s.pt")))
+        self._setup(spec)
         names = self.model.names
         self.map = {}
-        for flow_label, cls in spec["labels"].items():
+        labels = spec.get("labels") or {v: k for k, v in names.items()}
+        for flow_label, cls in labels.items():
             if isinstance(cls, str):
                 cls = next(k for k, v in names.items() if v == cls)
             self.map[int(cls)] = flow_label
 
-    def _detect(self, img):
-        res = self.model.predict(img, conf=self.conf, verbose=False)[0]
-        out = []
-        for box, cls, conf in zip(res.boxes.xywh.tolist(), res.boxes.cls.tolist(), res.boxes.conf.tolist()):
-            label = self.map.get(int(cls))
-            if label:
-                x, y, w, h = box
-                out.append(Detection(label, x, y, w, h, float(conf)))
-        return out
+
+@register("yolo_world")
+class YoloWorldDetector(_UltralyticsBase):
+    """Open-vocabulary detection: describe what to find in words, no training.
+
+    model: yolov8s-worldv2.pt (fast) ... yolov8x-worldv2.pt (accurate)
+    classes: ["person", "car"]  or  {enemy: "red monster", coin: "gold coin"}
+             (flow label -> text prompt)
+    """
+
+    def __init__(self, spec, base_dir):
+        super().__init__(spec, base_dir)
+        try:
+            from ultralytics import YOLOWorld
+        except ImportError as e:  # pragma: no cover - optional
+            raise ImportError("yolo_world detector needs: pip install ultralytics") from e
+        self.model = YOLOWorld(_model_path(base_dir, spec.get("model", "yolov8s-worldv2.pt")))
+        classes = spec.get("classes") or ["person"]
+        if isinstance(classes, list):
+            classes = {c: c for c in classes}
+        self.labels = list(classes)
+        self.model.set_classes(list(classes.values()))
+        self._setup(spec)
+        self.map = {i: label for i, label in enumerate(self.labels)}

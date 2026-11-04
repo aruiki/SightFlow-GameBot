@@ -12,7 +12,50 @@ AIに行動を学習させるのではなく、
                                   デバッグ表示: 検出枠・現在の状態・発火したルール
 ```
 
-## デモの結果
+## Web UI（ノードエディタ）
+
+Node-RED のように**ノードを線でつなぐだけ**でボットの動きを作れます。
+検出された物体には**ラベル**（enemy など）と**追跡ID**（#3 など、同じ物体なら同じ番号）が付き、
+それを元に「いちばん近い敵を狙う」「同じ敵を追い続ける」といった処理を組み立てます。
+
+```bash
+pip install -r requirements.txt
+cd webui && npm install && npm run build && cd ..
+python -m sightflow web            # → http://127.0.0.1:8765
+```
+
+- **左**: ノード一覧（見る / 選ぶ / 判断 / 操作 / 便利）。ドラッグで置く・ダブルクリックで追加
+- **中央**: ノードをつなぐキャンバス。線の色がデータの種類（リスト / 物体 / 数 / はい・いいえ）で、合わない線はつながりません。
+  実行中は各ノードに**今の値**が出て、実際に動いた操作ノードは**光ります**。変更は自動保存されます
+- **右**: ライブ画面（検出枠・ラベル・ID・移動方向・照準）と設定。画面をクリックすると座標がコピーされます
+- 上部のモード: **停止** / **見るだけ**（入力を送らない）/ **操作する**（実際にキーとマウスを操作。F12で停止）
+
+### 検出器
+
+| 種類 | 内容 |
+|---|---|
+| **YOLO-World**（既定） | 探したいものを**英語の言葉で書くだけ**で検出（オープン語彙）。学習不要。RTX 3060 で 1フレーム約20ms |
+| 学習済みYOLO | 自分で学習した `best.pt` や YOLO11 などを読み込む。ゲーム専用に学習すれば最も高精度 |
+| 色 | HSV の色範囲。付属デモ用 |
+
+YOLO 系はすべて ByteTrack で追跡IDが付きます。初回はモデルの重みが自動でダウンロードされます（`models/`）。
+GPU で動かすには CUDA 版 PyTorch を入れてください（例: `pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128`）。
+
+> Windows では、深いフォルダに仮想環境を作ると PyTorch の DLL がパス長制限（260文字）で読み込めないことがあります。
+> その場合は `C:\Users\<you>\.venvs\sightflow` のような短いパスに仮想環境を作ってください。
+
+> Ultralytics（YOLO / YOLO-World）は AGPL-3.0 です。SightFlow 本体は MIT ですが、
+> Ultralytics を組み込んだものを配布・サービス提供する場合は AGPL の条件に従う必要があります。
+
+### 取り込み元
+
+デモゲーム / ウィンドウ（名前の一部で指定、候補を一覧表示）/ 画面の範囲 / 動画ファイル（録画したプレイで検出を確かめる用）
+
+## YAML で書く（CLI）
+
+Web UI を使わず、YAML のルールで動かすこともできます。
+
+### デモの結果
 
 付属のミニゲーム **Bush Arena**（自作。草むらに隠れながら敵を撃ち、コインを集める）で、
 ボットは**描画された画素だけ**を見て操作します。ゲーム内部の状態は読みません。
@@ -27,13 +70,13 @@ AIに行動を学習させるのではなく、
 
 5シード平均。1ティックあたりの検出+判断は約7ms（CPU）。`python demo/bench.py` で再現できます。
 
-## インストール
+### インストール
 
 ```bash
 pip install -r requirements.txt          # YOLOを使う場合は追加で: pip install ultralytics
 ```
 
-## すぐ試す
+### すぐ試す
 
 ```bash
 python demo/bench.py                                         # ヘッドレスでベンチマーク
@@ -50,7 +93,7 @@ python -m sightflow run demo/arena_live.yaml    # 別ターミナルで。F12 �
 > 実行中はマウスとキーボードを奪います。止めるときは **F12**（デバッグ窓なら q / Esc）。
 > 先に `--dry-run` で判断だけ確認するのがおすすめです。
 
-## 設定ファイル
+### 設定ファイル
 
 ```yaml
 source: {type: window, title: "my game"}      # window / screen / image / python
@@ -81,7 +124,7 @@ flow:
 
 `extends: base.yaml` で別ファイルを継承・上書きできます（例: `demo/arena_live.yaml`）。
 
-### 条件式で使えるもの
+#### 条件式で使えるもの
 
 | 名前 | 意味 |
 |---|---|
@@ -103,7 +146,7 @@ flow:
 
 式は安全なサブセットだけを許可しています（import・`__xxx__`・任意の関数呼び出しは不可）。
 
-### アクション
+#### アクション
 
 | アクション | 動作 |
 |---|---|
@@ -122,7 +165,7 @@ flow:
 状態には `on_enter:` で、入った瞬間に1回だけ実行するアクションも書けます。
 座標 `[x, y]` は、両方が 0〜1 なら画面サイズに対する割合として扱います（ウィンドウサイズが変わっても使える）。
 
-### 壁に引っかかったとき
+#### 壁に引っかかったとき
 
 ```yaml
 run:
@@ -138,7 +181,7 @@ flow:
         - do: [{move: "[vars.ux, vars.uy]"}]
 ```
 
-### 検出器の共通オプション
+#### 検出器の共通オプション
 
 | オプション | 意味 |
 |---|---|
@@ -147,7 +190,7 @@ flow:
 | `max_count: n` | 上位n個だけ残す |
 | `aspect: [lo, hi]` | （color）幅÷高さの範囲。HPバーのような横長だけ拾う |
 
-## 自分のゲームに使う手順
+### 自分のゲームに使う手順
 
 1. `python -m sightflow grab my.yaml -o shot.png` で1フレーム保存
 2. `python -m sightflow pick shot.png` で対象の画素をクリックし、HSVの値を調べる
@@ -173,10 +216,14 @@ sightflow/
   flow.py        状態・ルール・アクション・クールダウン
   io.py          画面キャプチャ（ウィンドウ / 範囲 / 画像 / Python）と入力（pynput）
   motion.py      自分の移動速度の推定と詰まり検知
+  tracking.py    追跡ID（YOLO 以外の検出器用）
+  graph.py       ノードの定義と実行エンジン（ここに足したノードがエディタに出る）
+  server.py      Web UI のサーバー（FastAPI + WebSocket）
   bot.py         設定読み込みとメインループ
   overlay.py     デバッグ表示
-  cli.py         run / detect / grab / pick
-demo/            Bush Arena（自作ミニゲーム）・設定・ベンチマーク
+  cli.py         run / detect / grab / pick / web
+webui/           ノードエディタ（React + React Flow）
+demo/            Bush Arena（自作ミニゲーム）・設定・ノードのデモ（arena_project.json）・ベンチマーク
 examples/        他のゲーム向けの設定雛形
 tests/
 ```

@@ -4,6 +4,7 @@
   python -m sightflow detect CONFIG IMAGE [-o out.png]     test detectors on a screenshot
   python -m sightflow grab CONFIG -o shot.png               save one frame from the source
   python -m sightflow pick IMAGE                            click pixels to print HSV values
+  python -m sightflow web [project.json]                    node editor + live view (browser)
 """
 from __future__ import annotations
 
@@ -75,6 +76,12 @@ def cmd_pick(a):
     cv2.destroyAllWindows()
 
 
+def cmd_web(a):
+    from .server import serve
+
+    serve(a.project, a.host, a.port)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="sightflow")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -97,6 +104,11 @@ def main(argv=None):
     k = sub.add_parser("pick")
     k.add_argument("image")
     k.set_defaults(fn=cmd_pick)
+    w = sub.add_parser("web", help="node editor + live view in the browser")
+    w.add_argument("project", nargs="?")
+    w.add_argument("--host", default="127.0.0.1")
+    w.add_argument("--port", type=int, default=8765)
+    w.set_defaults(fn=cmd_web)
     a = p.parse_args(argv)
     a.fn(a)
 
