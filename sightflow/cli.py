@@ -76,6 +76,13 @@ def cmd_pick(a):
     cv2.destroyAllWindows()
 
 
+def cmd_nodes_doc(a):
+    from .graph import nodes_markdown
+
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.write(nodes_markdown())
+
+
 def cmd_web(a):
     from .server import serve
 
@@ -109,6 +116,8 @@ def main(argv=None):
     w.add_argument("--host", default="127.0.0.1")
     w.add_argument("--port", type=int, default=8765)
     w.set_defaults(fn=cmd_web)
+    nd = sub.add_parser("nodes-doc", help="print the node reference (markdown)")
+    nd.set_defaults(fn=cmd_nodes_doc)
     a = p.parse_args(argv)
     a.fn(a)
 

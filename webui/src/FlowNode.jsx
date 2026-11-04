@@ -38,7 +38,8 @@ function PropEditor({ prop, value, onChange, labels, disabled }) {
 }
 
 function FlowNode({ id, type, data, selected }) {
-  const { defs, categories, labels } = useMeta()
+  const { defs, categories, labels, ioNames } = useMeta()
+  const ioName = (n) => ioNames?.[n] ?? IO_NAMES[n] ?? n
   const def = defs[type]
   const st = useNodeStatus(id)
   const edges = useEdges()
@@ -67,14 +68,14 @@ function FlowNode({ id, type, data, selected }) {
                     <>
                       <Handle type="target" position={Position.Left} id={inp.name}
                         className="h" style={{ '--h': TYPE_COLORS[inp.type] }} />
-                      <span>{IO_NAMES[inp.name] ?? inp.name}</span>
+                      <span>{ioName(inp.name)}</span>
                     </>
                   )}
                 </div>
                 <div className="io out">
                   {out && (
                     <>
-                      <span>{IO_NAMES[out.name] ?? out.name}</span>
+                      <span>{ioName(out.name)}</span>
                       <Handle type="source" position={Position.Right} id={out.name}
                         className="h" style={{ '--h': TYPE_COLORS[out.type] }} />
                     </>
