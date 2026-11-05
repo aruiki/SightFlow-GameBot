@@ -132,40 +132,7 @@
     },
     "fps": 20,
     "stuck_min_speed": 25,
-    "screens": [
-      {
-        "id": "s_13624727",
-        "name": "arena",
-        "template": "screens/s_13624727.png",
-        "templates": [
-          "screens/s_13624727.png"
-        ],
-        "template_count": 1,
-        "roi": null,
-        "method": "template",
-        "threshold": 0.8,
-        "enter_frames": 1,
-        "exit_frames": 2,
-        "hysteresis": 0.08,
-        "has_image": false
-      },
-      {
-        "id": "s_bafcec62",
-        "name": "arena",
-        "template": "screens/s_bafcec62.png",
-        "templates": [
-          "screens/s_bafcec62.png"
-        ],
-        "template_count": 1,
-        "roi": null,
-        "method": "template",
-        "threshold": 0.8,
-        "enter_frames": 1,
-        "exit_frames": 2,
-        "hysteresis": 0.08,
-        "has_image": true
-      }
-    ]
+    "screens": []
   },
   "graph": {
     "nodes": [

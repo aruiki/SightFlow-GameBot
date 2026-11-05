@@ -59,6 +59,12 @@ def test_demo_macro_hides_and_attacks(tmp_path):
     assert clicks > 0, "tactics never attacked"
 
 
+def test_demo_and_app_projects_start_without_screens():
+    for path in ("demo/arena_macro.json", "demo/arena_project.json", "templates/brawl_like.json"):
+        proj = load(path)
+        assert proj["settings"].get("screens", []) == [], path
+
+
 def test_app_template_is_valid():
     proj = load("templates/brawl_like.json")
     graph = Graph(proj["graph"])
