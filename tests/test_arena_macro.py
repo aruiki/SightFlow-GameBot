@@ -59,6 +59,19 @@ def test_demo_macro_hides_and_attacks(tmp_path):
     assert clicks > 0, "tactics never attacked"
 
 
+def test_brawl_live_template_is_valid():
+    proj = load("templates/brawl_live.json")
+    graph = Graph(proj["graph"])
+    ids = set(graph.nodes)
+    assert {"s_lobby", "click_play", "tactics", "s_reload", "click_reload"} <= ids
+    src = proj["settings"]["source"]
+    assert src["process"] == "dnplayer.exe" and src["child"] == "TheRender"
+    assert src["width"] == 960
+    det = proj["settings"]["detector"]
+    assert {"me", "enemy", "bush", "gas"} <= {c["label"] for c in det["color"]} | {
+        c["label"] for c in det["region"]}
+
+
 def test_demo_and_app_projects_start_without_screens():
     for path in ("demo/arena_macro.json", "demo/arena_project.json", "templates/brawl_like.json"):
         proj = load(path)

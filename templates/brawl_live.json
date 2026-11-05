@@ -226,6 +226,30 @@
           "gas_danger": 60,
           "priority": 2
         }
+      },
+      {
+        "id": "s_reload",
+        "type": "screen_is",
+        "position": {
+          "x": 0,
+          "y": 480
+        },
+        "data": {
+          "screen": "reload"
+        }
+      },
+      {
+        "id": "click_reload",
+        "type": "click_at",
+        "position": {
+          "x": 240,
+          "y": 480
+        },
+        "data": {
+          "x": 0.296,
+          "y": 0.587,
+          "cooldown": 4.0
+        }
       }
     ],
     "edges": [
@@ -262,6 +286,13 @@
         "source": "both_ok",
         "sourceHandle": "result",
         "target": "tactics",
+        "targetHandle": "run"
+      },
+      {
+        "id": "s_reload.result-click_reload.run",
+        "source": "s_reload",
+        "sourceHandle": "result",
+        "target": "click_reload",
         "targetHandle": "run"
       }
     ]
