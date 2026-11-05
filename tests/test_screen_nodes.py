@@ -164,6 +164,15 @@ def test_release_holds_forgets_pressed_keys():
     assert c.intents.key_downs == ["e"]      # pressed again after a stop
 
 
+def test_tactics_can_attack_with_a_right_click():
+    gr = g([("t", "tactics", {"bush": "bush", "enemy": "enemy", "gas": "",
+                              "attack_mode": "right", "attack_key": "space"})])
+    c = make_ctx(bushes=[(700, 300, 80)], enemies=[(400, 300, 20)])
+    gr.tick(c)
+    assert c.intents.casts == [(400, 300, "mouse_right")]
+    assert c.intents.clicks == [] and c.intents.taps == []
+
+
 def test_tactics_does_nothing_when_run_is_false():
     gr = g([("s", "screen_is", {"screen": "match"}),
             ("t", "tactics", {"bush": "bush", "enemy": "enemy", "gas": ""})],

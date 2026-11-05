@@ -1,0 +1,269 @@
+{
+  "name": "Brawl live (LDPlayer)",
+  "settings": {
+    "source": {
+      "type": "window",
+      "title": "LDPlayer",
+      "process": "dnplayer.exe",
+      "child": "TheRender",
+      "width": 960
+    },
+    "detector": {
+      "type": "color",
+      "color": [
+        {
+          "type": "color",
+          "label": "me",
+          "hsv": [
+            [
+              50,
+              140,
+              190
+            ],
+            [
+              62,
+              225,
+              255
+            ]
+          ],
+          "w": [
+            20,
+            200
+          ],
+          "h": [
+            3,
+            10
+          ],
+          "aspect": [
+            3,
+            25
+          ],
+          "min_area": 100,
+          "max_area": 1300,
+          "offset": [
+            0,
+            50
+          ],
+          "max_count": 1
+        },
+        {
+          "type": "color",
+          "label": "enemy",
+          "hsv": [
+            [
+              [
+                168,
+                100,
+                70
+              ],
+              [
+                179,
+                255,
+                255
+              ]
+            ],
+            [
+              [
+                0,
+                100,
+                70
+              ],
+              [
+                12,
+                255,
+                255
+              ]
+            ]
+          ],
+          "roi": [
+            0,
+            100,
+            880,
+            380
+          ],
+          "w": [
+            25,
+            200
+          ],
+          "h": [
+            2,
+            12
+          ],
+          "aspect": [
+            2,
+            25
+          ],
+          "min_area": 40,
+          "max_area": 800,
+          "offset": [
+            0,
+            50
+          ],
+          "max_count": 10
+        }
+      ],
+      "region": [
+        {
+          "type": "region",
+          "label": "bush",
+          "hsv": [
+            [
+              45,
+              100,
+              70
+            ],
+            [
+              85,
+              255,
+              255
+            ]
+          ],
+          "min_area": 3000,
+          "morph": 5
+        },
+        {
+          "type": "region",
+          "label": "gas",
+          "hsv": [
+            [
+              140,
+              80,
+              80
+            ],
+            [
+              172,
+              255,
+              255
+            ]
+          ],
+          "min_area": 8000,
+          "morph": 5
+        }
+      ]
+    },
+    "anchor": "me",
+    "input": {
+      "move_keys": {
+        "up": "w",
+        "down": "s",
+        "left": "a",
+        "right": "d"
+      }
+    },
+    "fps": 10,
+    "stuck_min_speed": 25,
+    "screens": []
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "s_lobby",
+        "type": "screen_is",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "data": {
+          "screen": "lobby"
+        }
+      },
+      {
+        "id": "not_lobby",
+        "type": "not",
+        "position": {
+          "x": 240,
+          "y": 0
+        },
+        "data": {}
+      },
+      {
+        "id": "click_play",
+        "type": "click_at",
+        "position": {
+          "x": 240,
+          "y": 160
+        },
+        "data": {
+          "x": 0.85,
+          "y": 0.91,
+          "cooldown": 3.0
+        }
+      },
+      {
+        "id": "me",
+        "type": "me",
+        "position": {
+          "x": 0,
+          "y": 320
+        },
+        "data": {}
+      },
+      {
+        "id": "both_ok",
+        "type": "and",
+        "position": {
+          "x": 480,
+          "y": 200
+        },
+        "data": {}
+      },
+      {
+        "id": "tactics",
+        "type": "tactics",
+        "position": {
+          "x": 700,
+          "y": 200
+        },
+        "data": {
+          "bush": "bush",
+          "enemy": "enemy",
+          "gas": "gas",
+          "attack_mode": "right",
+          "attack_key": "space",
+          "enemy_range": 320,
+          "attack_cooldown": 0.5,
+          "gas_margin": 40,
+          "gas_danger": 60,
+          "priority": 2
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "s_lobby.result-not_lobby.in",
+        "source": "s_lobby",
+        "sourceHandle": "result",
+        "target": "not_lobby",
+        "targetHandle": "in"
+      },
+      {
+        "id": "s_lobby.result-click_play.run",
+        "source": "s_lobby",
+        "sourceHandle": "result",
+        "target": "click_play",
+        "targetHandle": "run"
+      },
+      {
+        "id": "not_lobby.result-both_ok.a",
+        "source": "not_lobby",
+        "sourceHandle": "result",
+        "target": "both_ok",
+        "targetHandle": "a"
+      },
+      {
+        "id": "me.found-both_ok.b",
+        "source": "me",
+        "sourceHandle": "found",
+        "target": "both_ok",
+        "targetHandle": "b"
+      },
+      {
+        "id": "both_ok.result-tactics.run",
+        "source": "both_ok",
+        "sourceHandle": "result",
+        "target": "tactics",
+        "targetHandle": "run"
+      }
+    ]
+  }
+}

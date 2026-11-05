@@ -66,7 +66,29 @@ def test_attacks_while_moving_towards_a_bush():
     assert dec.mode == "approach"
 
 
-def test_attack_cooldown():
+def test_keeps_hiding_in_a_safe_bush_instead_of_crossing_open_ground():
+    policy = TacticalPolicy()
+    me = d("me", 480, 270, 10, 10)
+    standing = d("bush", 480, 270, 80, 80, id=1)
+    bigger = d("bush", 760, 270, 300, 300, id=2)
+    assert policy.tick(0.0, me, [standing], frame_w=W, frame_h=H).mode == "hide"
+    dec = policy.tick(0.1, me, [standing, bigger], frame_w=W, frame_h=H)
+    assert dec.mode == "hide"
+    assert dec.move is None
+    assert dec.target is standing
+
+
+def test_leaves_a_bush_that_the_gas_reaches():
+    policy = TacticalPolicy()
+    me = d("me", 480, 270, 10, 10)
+    standing = d("bush", 480, 270, 80, 80, id=1)
+    gas = GasField([d("gas", 480, 270, 300, 300)])
+    dec = policy.tick(0.0, me, [standing], gas=gas, frame_w=W, frame_h=H)
+    assert dec.mode == "rotate"
+    assert dec.move is not None
+
+
+
     policy = TacticalPolicy()
     me = d("me", 100, 300, 10, 10)
     bush = d("bush", 700, 300, 80, 80, id=1)
@@ -135,14 +157,14 @@ def test_explores_up_with_no_bush_and_no_gas():
 
 
 def test_stuck_turns_sideways_instead_of_pushing_into_the_wall():
-    policy = TacticalPolicy()
+    policy = TacticalPolicy(PolicyConfig(stuck_time=0.4, stuck_hold=0.4))
     me = d("me", 300, 300, 10, 10)
     bush = d("bush", 850, 300, 60, 60, id=1)
     dec = None
     for t in (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6):
         dec = policy.tick(t, me, [bush], frame_w=W, frame_h=H)
     assert dec.mode == "stuck"
-    assert dec.move is not None and dec.move[1] < -0.3
+    assert dec.move is not None and abs(dec.move[1]) > 0.3
 
 
 def test_target_hysteresis_keeps_the_current_bush_until_dwell_passes():

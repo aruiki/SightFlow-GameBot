@@ -546,7 +546,7 @@ def _release_key(ctx, i, p, s):
       props=[P("bush", "label", "bush", "草むらラベル"),
              P("enemy", "label", "enemy", "敵ラベル"),
              P("gas", "label", "", "ガスラベル"),
-             P("attack_mode", "select", "key", "攻撃方法", options=["key", "click"]),
+             P("attack_mode", "select", "key", "攻撃方法", options=["key", "click", "right", "super"]),
              P("attack_key", "text", "space", "攻撃キー"),
              P("enemy_range", "number", 320, "攻撃射程(px)"),
              P("attack_cooldown", "number", 0.35, "攻撃間隔(秒)"),
@@ -575,7 +575,13 @@ def _tactics(ctx, i, p, s):
     if dec.move:
         ctx.moves.append((_num(p["priority"], 2), dec.move, p["_id"]))
     if dec.attack:
-        if str(p["attack_mode"]) == "click" and dec.attack_target is not None:
+        mode = str(p["attack_mode"])
+        if mode == "right" and dec.attack_target is not None:
+            ctx.intents.casts.append((dec.attack_target.x, dec.attack_target.y, "mouse_right"))
+        elif mode == "super" and dec.attack_target is not None:
+            ctx.intents.casts.append((dec.attack_target.x, dec.attack_target.y,
+                                      str(p["attack_key"])))
+        elif mode == "click" and dec.attack_target is not None:
             ctx.intents.clicks.append((dec.attack_target.x, dec.attack_target.y))
         else:
             ctx.intents.taps.append(str(p["attack_key"]))

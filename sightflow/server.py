@@ -40,6 +40,7 @@ from .tracking import CentroidTracker
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "webui" / "dist"
 DEFAULT_PROJECT = ROOT / "demo" / "arena_project.json"
+BACKGROUND_MSG = "game window is not in the foreground (click it to resume)"
 
 
 def detector_specs(det: dict) -> list[dict]:
@@ -182,6 +183,12 @@ class Engine:
                     getattr(self._live_input, "release_all", lambda: None)()
                 if self.graph:
                     self.graph.release_holds()
+            source = self.source
+        if mode == "live" and source is not None and hasattr(source, "focus"):
+            try:
+                source.focus()
+            except Exception:
+                traceback.print_exc()
 
     def set_playback(self, action: str) -> dict:
         if action not in ("pause", "resume", "step"):
@@ -274,6 +281,13 @@ class Engine:
             inp = self._sim_input or (self._live_input if mode == "live" else None) or NullInput()
             if self._sim_input and mode != "live":
                 inp = NullInput()
+            if mode == "live" and inp is self._live_input and hasattr(source, "is_foreground"):
+                if not source.is_foreground():      # never type into another app
+                    inp.set_move(None)
+                    inp = NullInput()
+                    self.error = BACKGROUND_MSG
+                elif self.error == BACKGROUND_MSG:
+                    self.error = None
         t0 = time.perf_counter()
         frame = source.grab()
         now = source.time()
@@ -302,6 +316,8 @@ class Engine:
             inp.tap(k)
         for x, y in it.clicks:
             inp.click(x, y)
+        for x, y, press in it.casts:
+            inp.cast(x, y, press)
         for d in it.drags:
             inp.drag(*d)
         t3 = time.perf_counter()
@@ -322,7 +338,8 @@ class Engine:
             "nodes": status,
             "screen": self.screen_state.to_dict(),
             "screens": self.screen_state.candidates,
-            "intents": {"move": it.move, "clicks": it.clicks, "drags": [d[:4] for d in it.drags],
+            "intents": {"move": it.move, "clicks": it.clicks, "casts": it.casts,
+                        "drags": [d[:4] for d in it.drags],
                         "taps": it.taps, "keys": it.key_downs + it.key_ups},
             "motion": {"speed": round(self.motion.speed, 1), "stuck": round(self.motion.stuck_time, 2)},
             "timing": {k: round(v * 1000, 1) for k, v in timing.items()},

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -25,6 +26,11 @@ import numpy as np
 # ======================================================================= sources
 class FrameSource:
     origin = (0, 0)  # screen position of frame pixel (0, 0), used to place clicks
+    scale = 1.0      # screen pixels per frame pixel (frames may be resized)
+
+    def to_screen(self, x, y):
+        ox, oy = self.origin
+        return int(ox + x * self.scale), int(oy + y * self.scale)
 
     def grab(self) -> np.ndarray:
         raise NotImplementedError
@@ -47,9 +53,31 @@ class ImageSource(FrameSource):
         return self.img.copy()
 
 
-def _find_window_rect(title: str):
-    """Client-area rect (left, top, w, h) of the first visible window whose title
-    contains `title`. Windows only."""
+def _process_name(pid: int) -> str:
+    import ctypes
+    from ctypes import wintypes
+
+    k32 = ctypes.windll.kernel32
+    handle = k32.OpenProcess(0x1000, False, int(pid))   # QUERY_LIMITED_INFORMATION
+    if not handle:
+        return ""
+    try:
+        size = wintypes.DWORD(1024)
+        buf = ctypes.create_unicode_buffer(1024)
+        if k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+            return buf.value
+        return ""
+    finally:
+        k32.CloseHandle(handle)
+
+
+def _find_window(title: str, process: str | None = None):
+    """Handle of the first visible window whose title contains `title`.
+
+    `process` optionally restricts the match to an executable name
+    (e.g. ``dnplayer.exe`` for LDPlayer), so another window that happens to
+    contain the same words is ignored.
+    """
     if sys.platform != "win32":
         raise RuntimeError("window source is Windows-only; use type: screen with a region")
     import ctypes
@@ -69,6 +97,10 @@ def _find_window_rect(title: str):
             buf = ctypes.create_unicode_buffer(n + 1)
             user32.GetWindowTextW(hwnd, buf, n + 1)
             if title.lower() in buf.value.lower():
+                pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if process and not _process_name(pid.value).lower().endswith(process.lower()):
+                    return True
                 found.append(hwnd)
                 return False
         return True
@@ -76,7 +108,43 @@ def _find_window_rect(title: str):
     user32.EnumWindows(cb, 0)
     if not found:
         raise RuntimeError(f"no visible window with title containing {title!r}")
-    hwnd = found[0]
+    return found[0]
+
+
+def _find_child(parent, name: str):
+    """First visible child whose class name or title contains `name` (LDPlayer's
+    game area is a child called ``TheRender``)."""
+    if not name:
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    found = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    def cb(hwnd, _):
+        cls = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, cls, 256)
+        n = user32.GetWindowTextLengthW(hwnd)
+        buf = ctypes.create_unicode_buffer(n + 1)
+        user32.GetWindowTextW(hwnd, buf, n + 1)
+        if user32.IsWindowVisible(hwnd) and (name.lower() in cls.value.lower()
+                                             or name.lower() in buf.value.lower()):
+            found.append(hwnd)
+            return False
+        return True
+
+    user32.EnumChildWindows(parent, cb, 0)
+    return found[0] if found else None
+
+
+def _window_rect(hwnd):
+    """Client-area rect (left, top, w, h) in screen pixels."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
     rect = wintypes.RECT()
     user32.GetClientRect(hwnd, ctypes.byref(rect))
     pt = wintypes.POINT(0, 0)
@@ -84,19 +152,40 @@ def _find_window_rect(title: str):
     return pt.x, pt.y, rect.right, rect.bottom
 
 
-class ScreenSource(FrameSource):
-    def __init__(self, region=None, window: str | None = None, monitor: int = 1):
-        import mss
+def _find_window_rect(title: str, process: str | None = None):
+    return _window_rect(_find_window(title, process))
 
-        self.sct = mss.mss()
+
+class ScreenSource(FrameSource):
+    def __init__(self, region=None, window: str | None = None, monitor: int = 1,
+                 child: str | None = None, width: int | None = None,
+                 process: str | None = None):
+        self._local = threading.local()
         self.window = window
+        self.process = process
+        self.width = int(width) if width else None
+        self.child = child
+        self.hwnd = None
         self.monitor = monitor
         self.region = region
         self._resolve()
 
+    @property
+    def sct(self):
+        # mss keeps GDI handles that only work in the thread that made them,
+        # so the UI thread and the engine thread each get their own.
+        sct = getattr(self._local, "sct", None)
+        if sct is None:
+            import mss
+
+            sct = self._local.sct = mss.mss()
+        return sct
+
     def _resolve(self):
         if self.window:
-            l, t, w, h = _find_window_rect(self.window)
+            self.hwnd = _find_window(self.window, self.process)
+            area = (_find_child(self.hwnd, self.child) if self.child else None) or self.hwnd
+            l, t, w, h = _window_rect(area)
         elif self.region:
             l, t, w, h = (int(v) for v in self.region)
         else:
@@ -106,13 +195,45 @@ class ScreenSource(FrameSource):
         self.origin = (l, t)
 
     def grab(self):
-        if self.window:  # follow the window if it moved
+        if self.window:
             self._resolve()
-        shot = np.asarray(self.sct.grab(self.box))
-        return cv2.cvtColor(shot, cv2.COLOR_BGRA2BGR)
+        shot = cv2.cvtColor(np.asarray(self.sct.grab(self.box)), cv2.COLOR_BGRA2BGR)
+        self.scale = 1.0
+        if self.width and shot.shape[1] != self.width:
+            self.scale = shot.shape[1] / self.width
+            h = max(1, round(shot.shape[0] / self.scale))
+            interp = cv2.INTER_AREA if self.scale > 1 else cv2.INTER_LINEAR
+            shot = cv2.resize(shot, (self.width, h), interpolation=interp)
+        return shot
+
+    def is_foreground(self) -> bool:
+        if not self.window:
+            return True
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        fg = user32.GetForegroundWindow()
+        return bool(fg) and user32.GetAncestor(fg, 2) == user32.GetAncestor(self.hwnd, 2)
+
+    def focus(self):
+        if not self.window:
+            return
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        self._resolve()
+        if user32.IsIconic(self.hwnd):
+            user32.ShowWindow(self.hwnd, 9)      # SW_RESTORE
+        # A synthetic Alt press lets a background process hand focus over.
+        user32.keybd_event(0x12, 0, 0, 0)
+        user32.keybd_event(0x12, 0, 2, 0)
+        user32.SetForegroundWindow(self.hwnd)
 
     def close(self):
-        self.sct.close()
+        sct = getattr(self._local, "sct", None)
+        if sct is not None:
+            sct.close()
+            self._local.sct = None
 
 
 class VideoSource(FrameSource):
@@ -179,9 +300,11 @@ def load_factory(ref: str, base_dir: Path):
 def build_source(spec: dict, base_dir: Path) -> FrameSource:
     kind = spec.get("type", "screen")
     if kind == "window":
-        return ScreenSource(window=spec["title"])
+        return ScreenSource(window=spec["title"], child=spec.get("child"),
+                            width=spec.get("width"), process=spec.get("process"))
     if kind == "screen":
-        return ScreenSource(region=spec.get("region"), monitor=spec.get("monitor", 1))
+        return ScreenSource(region=spec.get("region"), monitor=spec.get("monitor", 1),
+                            width=spec.get("width"))
     if kind == "image":
         return ImageSource(base_dir / spec["path"])
     if kind == "video":
@@ -213,6 +336,10 @@ class InputBackend:
         pass
 
     def click(self, x: float, y: float):  # frame coordinates
+        pass
+
+    def cast(self, x: float, y: float, press: str):
+        """Point at (x, y) and press `press` ("mouse_right", "mouse_left" or a key)."""
         pass
 
     def drag(self, fx: float, fy: float, tx: float, ty: float, seconds: float = 0.15):
@@ -300,21 +427,37 @@ class KeyboardMouseInput(InputBackend):
         self.set_move(None)
 
     def click(self, x, y):
-        ox, oy = self.source.origin
-        self._mouse.position = (int(ox + x), int(oy + y))
+        sx, sy = self.source.to_screen(x, y)
+        self._mouse.position = (sx, sy)
         self._mouse.click(self._Button.left)
+
+    def cast(self, x, y, press):
+        """Smart-cast: move the mouse onto the target, then press a mouse button/key."""
+        sx, sy = self.source.to_screen(x, y)
+        self._mouse.position = (sx, sy)
+        time.sleep(0.02)
+        if press in ("mouse_right", "right"):
+            self._mouse.click(self._Button.right)
+        elif press in ("mouse_left", "left"):
+            self._mouse.click(self._Button.left)
+        else:
+            k = self._key(press)
+            self._kb.press(k)
+            time.sleep(self.tap_seconds)
+            self._kb.release(k)
 
     def drag(self, fx, fy, tx, ty, seconds=0.15):
         """Press at (fx, fy), glide to (tx, ty), release - a touch-style swipe.
         Blocks for `seconds`."""
-        ox, oy = self.source.origin
+        sx0, sy0 = self.source.to_screen(fx, fy)
+        sx1, sy1 = self.source.to_screen(tx, ty)
         steps = max(4, int(seconds / 0.015))
-        self._mouse.position = (int(ox + fx), int(oy + fy))
+        self._mouse.position = (sx0, sy0)
         self._mouse.press(self._Button.left)
         try:
             for i in range(1, steps + 1):
                 f = i / steps
-                self._mouse.position = (int(ox + fx + (tx - fx) * f), int(oy + fy + (ty - fy) * f))
+                self._mouse.position = (int(sx0 + (sx1 - sx0) * f), int(sy0 + (sy1 - sy0) * f))
                 time.sleep(seconds / steps)
         finally:
             self._mouse.release(self._Button.left)

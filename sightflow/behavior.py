@@ -55,9 +55,9 @@ class PolicyConfig:
     target_radius: float = 45.0      # close enough to count as "inside this bush"
 
     # stuck detection
-    stuck_time: float = 0.6          # blocked for this long -> sidestep
+    stuck_time: float = 0.8          # blocked for this long -> sidestep
     stuck_speed: float = 25.0        # px/s
-    stuck_hold: float = 0.6          # keep sidestepping this long
+    stuck_hold: float = 1.2          # keep sidestepping this long
 
     # weights
     w_target: float = 1.0
@@ -383,6 +383,8 @@ class TacticalPolicy:
         self._stuck_until: float = -INF
         self._stuck_side: int = 1
         self._stuck_dir: tuple[float, float] | None = None
+        self._stuck_events: int = 0
+        self._avoid: dict[int, float] = {}
 
     def reset(self):
         self.__init__(self.cfg)
@@ -403,6 +405,13 @@ class TacticalPolicy:
         target, target_score = self._pick(now, scored)
         clear = gas.clearance(me.x, me.y)
         danger = (not gas.empty) and clear < cfg.gas_danger
+        prev = next((b for b in bushes
+                     if getattr(b, "id", None) == getattr(self, "_last_target_id", None)), None)
+        if (target is not None and not danger and prev is not None
+                and not _inside(target, me.x, me.y) and _inside(prev, me.x, me.y)
+                and gas.clearance(prev.x, prev.y) >= cfg.gas_margin):
+            # Already hidden: do not walk out to a marginally better bush.
+            target, target_score = prev, 1.0
         in_target = target is not None and (
             _inside(target, me.x, me.y)
             or math.hypot(target.x - me.x, target.y - me.y) <= cfg.target_radius)
@@ -438,6 +447,7 @@ class TacticalPolicy:
         self._last_pos = (me.x, me.y)
         self._last_time = now
         self._last_move = move
+        self._last_target_id = getattr(target, "id", None)
         return Decision(move=move, attack=attack, attack_target=attack_target,
                         mode=mode, reason=reason, target=target,
                         target_score=target_score, clearance=clear,
@@ -445,6 +455,8 @@ class TacticalPolicy:
 
     # --------------------------------------------------------------- helpers
     def _pick(self, now: float, scored: list[tuple[Box, float]]) -> tuple[Box | None, float]:
+        scored = [(b, s) for b, s in scored
+                  if self._avoid.get(getattr(b, "id", None), -INF) <= now]
         if not scored:
             self.target_id = None
             return None, 0.0
@@ -485,10 +497,19 @@ class TacticalPolicy:
                     self._still += dt
                 else:
                     self._still = 0.0
+                    self._stuck_events = 0
                 if self._still >= self.cfg.stuck_time:
                     self._still = 0.0
                     self._stuck_until = now + self.cfg.stuck_hold
-                    self._stuck_side *= -1
+                    self._stuck_events += 1
+                    # Try the same sidestep a few times (alternating every tick
+                    # just walks into the wall again), then blacklist the bush.
+                    if self._stuck_events % 2 == 0:
+                        self._stuck_side *= -1
                     lm = self._last_move or (0.0, -1.0)
                     self._stuck_dir = (-lm[1] * self._stuck_side,
                                        lm[0] * self._stuck_side)
+                    if self._stuck_events >= 3 and self.target_id is not None:
+                        self._avoid[self.target_id] = now + 5.0
+                        self.target_id = None
+                        self._stuck_events = 0

@@ -55,6 +55,7 @@ class Intents:
     key_ups: list[str] = field(default_factory=list)
     clicks: list[tuple[float, float]] = field(default_factory=list)
     drags: list[tuple[float, float, float, float, float]] = field(default_factory=list)  # fx,fy,tx,ty,s
+    casts: list[tuple[float, float, str]] = field(default_factory=list)   # x,y,button/key
     logs: list[str] = field(default_factory=list)
 
 

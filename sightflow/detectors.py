@@ -98,6 +98,8 @@ class ColorDetector(Detector):
         self.max_area = float(spec.get("max_area", float("inf")))
         self.morph = int(spec.get("morph", 3))
         self.aspect = spec.get("aspect")
+        self.w_range = spec.get("w")
+        self.h_range = spec.get("h")
 
     def _detect(self, img):
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -115,6 +117,10 @@ class ColorDetector(Detector):
                 continue
             x, y, w, h = cv2.boundingRect(c)
             if self.aspect and not (self.aspect[0] <= w / max(h, 1) <= self.aspect[1]):
+                continue
+            if self.w_range and not (self.w_range[0] <= w <= self.w_range[1]):
+                continue
+            if self.h_range and not (self.h_range[0] <= h <= self.h_range[1]):
                 continue
             fill = area / max(w * h, 1)
             out.append(Detection(self.label, x + w / 2, y + h / 2, w, h, score=round(fill, 3)))
