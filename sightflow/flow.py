@@ -51,6 +51,8 @@ class Intents:
     move: tuple[float, float] | None = None  # unit-ish vector, None = stand still
     taps: list[str] = field(default_factory=list)
     holds: list[tuple[str, float]] = field(default_factory=list)          # (key, seconds)
+    key_downs: list[str] = field(default_factory=list)                   # hold until key_up
+    key_ups: list[str] = field(default_factory=list)
     clicks: list[tuple[float, float]] = field(default_factory=list)
     drags: list[tuple[float, float, float, float, float]] = field(default_factory=list)  # fx,fy,tx,ty,s
     logs: list[str] = field(default_factory=list)

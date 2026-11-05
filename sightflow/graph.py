@@ -21,9 +21,12 @@ from typing import Any, Callable
 
 from .detection import Detection, missing
 from .flow import Intents
+from .behavior import GasField, PolicyConfig, TacticalPolicy
+from .screens import ScreenState
 
 # ============================================================== declarations
 CATEGORIES = {
+    "screen": {"title": "画面", "color": "#22d3ee"},
     "sense": {"title": "見る", "color": "#3fa7ff"},
     "pick": {"title": "選ぶ", "color": "#9b7bff"},
     "logic": {"title": "判断", "color": "#ffb020"},
@@ -38,6 +41,7 @@ IO_NAMES = {
     "a": "a", "b": "b", "result": "結果", "value": "値", "in": "入力", "out": "出力", "me": "自分",
     "found": "見つかった", "speed": "速度", "stuck_time": "引っかかり秒", "stuck": "引っかかり", "t": "秒",
     "radius": "半径", "id": "ID", "set": "記憶する", "switched": "切り替えた",
+    "score": "一致度", "changed": "変わった", "done": "完了", "failed": "失敗", "attack": "攻撃",
 }
 TYPE_NAMES = {"list": "リスト", "object": "物体", "number": "数", "bool": "はい/いいえ", "any": "なんでも"}
 
@@ -82,13 +86,14 @@ def P(name, kind, default=None, label=None, **extra):
 class Ctx:
     """Everything a node can see during one tick."""
 
-    def __init__(self, groups, me, now, frame_w, frame_h, motion=None):
+    def __init__(self, groups, me, now, frame_w, frame_h, motion=None, screens=None):
         self.groups = groups
         self.me = me
         self.now = now
         self.frame_w = frame_w
         self.frame_h = frame_h
         self.motion = motion or {}
+        self.screens = screens or ScreenState()
         self.intents = Intents()
         self.moves: list[tuple[float, tuple[float, float], str]] = []  # (priority, vec, node)
         self.active: set[str] = set()   # action nodes that fired this tick
@@ -145,6 +150,68 @@ def _motion(ctx, i, p, s):
 @node("clock", "sense", "時間", "開始からの経過秒数", outputs=[("t", "number")])
 def _clock(ctx, i, p, s):
     return {"t": ctx.now}, f"{ctx.now:.1f}s"
+
+
+# ============================================================== SCREEN
+def _screen_lookup(ctx, want: str) -> tuple[bool, float]:
+    """A node may refer to a screen by id or by name (names survive re-registration)."""
+    st = ctx.screens
+    if not want:
+        return False, st.score
+    if st.current == want or (st.name and st.name == want):
+        return True, st.score
+    score = st.scores.get(want)
+    if score is None:
+        for c in st.candidates:
+            if want in (c.get("id"), c.get("name")):
+                score = c.get("score")
+                break
+    return False, float(score or 0.0)
+
+
+@node("screen_is", "screen", "画面が", "今の画面が指定した画面なら true",
+      outputs=[("result", "bool"), ("score", "number")],
+      props=[P("screen", "screen", "", "画面")])
+def _screen_is(ctx, i, p, s):
+    hit, score = _screen_lookup(ctx, str(p["screen"]))
+    name = ctx.screens.name or "不明"
+    return {"result": hit, "score": score}, f"{name} {score:.2f}"
+
+
+@node("screen_score", "screen", "画面の一致度", "指定した画面（空欄なら今の画面）の一致度",
+      outputs=[("value", "number")],
+      props=[P("screen", "screen", "", "画面")])
+def _screen_score(ctx, i, p, s):
+    _, score = _screen_lookup(ctx, str(p["screen"]))
+    return {"value": score}, f"{score:.2f}"
+
+
+@node("screen_changed", "screen", "画面が変わった", "前のティックから画面が変わった瞬間に true",
+      outputs=[("changed", "bool")])
+def _screen_changed(ctx, i, p, s):
+    cur = ctx.screens.current
+    changed = ("last" in s) and s["last"] != cur
+    s["last"] = cur
+    return {"changed": changed}, (ctx.screens.name or "不明") + ("（変わった）" if changed else "")
+
+
+@node("wait_screen", "screen", "画面を待つ", "指定した画面になるまで待つ。タイムアウトで失敗",
+      inputs=[("run", "bool")],
+      outputs=[("done", "bool"), ("failed", "bool")],
+      props=[P("screen", "screen", "", "画面"), P("timeout", "number", 10, "タイムアウト(秒)")])
+def _wait_screen(ctx, i, p, s):
+    sid = str(p["screen"])
+    if not _run(i):
+        s.clear()
+        return {"done": False, "failed": False}, "待機"
+    if "start" not in s:
+        s["start"] = ctx.now
+    if _screen_lookup(ctx, sid)[0]:
+        s["done"], s["failed"] = True, False
+    elif not s.get("done") and ctx.now - s["start"] >= _num(p["timeout"], 10):
+        s["failed"] = True
+    done, failed = bool(s.get("done")), bool(s.get("failed"))
+    return {"done": done, "failed": failed}, ("完了" if done else "タイムアウト" if failed else "待機")
 
 
 # ============================================================== PICK
@@ -286,6 +353,19 @@ def _hold_true(ctx, i, p, s):
     return {"out": on}, "true" if on else "false"
 
 
+@node("wait", "logic", "待つ", "指定した秒数がたつまで待つ（待機中は false）",
+      inputs=[("run", "bool")], outputs=[("out", "bool")],
+      props=[P("seconds", "number", 1.0, "秒数")])
+def _wait(ctx, i, p, s):
+    if not _run(i):
+        s.pop("start", None)
+        return {"out": False}, "待機"
+    if "start" not in s:
+        s["start"] = ctx.now
+    remain = max(0.0, _num(p["seconds"], 1.0) - (ctx.now - s["start"]))
+    return {"out": remain <= 0}, ("完了" if remain <= 0 else f"{remain:.1f}s")
+
+
 # ============================================================== UTIL
 @node("remember", "util", "覚える", "set が true のとき value を記憶し、以後ずっと出力（例: 狙う敵のID）",
       inputs=[("value", "any"), ("set", "bool")], outputs=[("value", "any")])
@@ -397,7 +477,7 @@ def _click(ctx, i, p, s):
     return {}, f"クリック {t.label}#{t.id}"
 
 
-@node("click_at", "act", "ここをクリック", "画面上の決まった位置をクリック（ボタンなど）",
+@node("click_at", "act", "画面座標をクリック", "画面上の決まった位置をクリック（0〜1は割合、それ以上はピクセル）",
       inputs=[("run", "bool")],
       props=[P("x", "number", 0.5, "x(0-1)"), P("y", "number", 0.5, "y(0-1)"),
              P("cooldown", "number", 1.0, "間隔(秒)")])
@@ -418,6 +498,90 @@ def _key(ctx, i, p, s):
     ctx.intents.taps.append(str(p["key"]))
     s["last"] = ctx.now
     return {}, f"押す {p['key']}"
+
+
+@node("hold_key", "act", "キーを押し続ける", "キーを押したままにする。秒数を過ぎるか実行が false で離す",
+      inputs=[("run", "bool")],
+      props=[P("key", "text", "space", "キー"), P("seconds", "number", 0, "秒数(0=実行中ずっと)")])
+def _hold_key(ctx, i, p, s):
+    key = str(p["key"])
+    seconds = _num(p["seconds"], 0)
+    run = _run(i)
+    if s.get("key") and s["key"] != key:
+        ctx.intents.key_ups.append(s["key"])
+        s.clear()
+    if not run:
+        if s.get("down"):
+            ctx.intents.key_ups.append(key)
+        s.clear()
+        return {}, "待機"
+    if not s.get("down"):
+        ctx.intents.key_downs.append(key)
+        s.update(down=True, key=key,
+                 until=(ctx.now + seconds if seconds > 0 else None))
+    if s.get("until") is not None and ctx.now >= s["until"]:
+        ctx.intents.key_ups.append(key)
+        s.update(down=False, until=None)
+        return {}, f"解放 {key}"
+    return {}, f"押下 {key}"
+
+
+@node("release_key", "act", "キーを離す", "押しっぱなしにしているキーを離す",
+      inputs=[("run", "bool")],
+      props=[P("key", "text", "space", "キー")])
+def _release_key(ctx, i, p, s):
+    key = str(p["key"])
+    if not _run(i):
+        s.pop("done", None)
+        return {}, "待機"
+    if not s.get("done"):
+        ctx.intents.key_ups.append(key)
+        s["done"] = True
+    return {}, f"離す {key}"
+
+
+@node("tactics", "act", "戦術（草むら/敵/ガス）",
+      "草むらへ隠れ、敵が来たら攻撃し、ガスが迫ったら安全な草むらへ移る（移動と攻撃は同時）",
+      inputs=[("run", "bool")], outputs=[("attack", "bool")],
+      props=[P("bush", "label", "bush", "草むらラベル"),
+             P("enemy", "label", "enemy", "敵ラベル"),
+             P("gas", "label", "", "ガスラベル"),
+             P("attack_mode", "select", "key", "攻撃方法", options=["key", "click"]),
+             P("attack_key", "text", "space", "攻撃キー"),
+             P("enemy_range", "number", 320, "攻撃射程(px)"),
+             P("attack_cooldown", "number", 0.35, "攻撃間隔(秒)"),
+             P("gas_margin", "number", 80, "ガス余裕(px)"),
+             P("gas_danger", "number", 160, "危険距離(px)"),
+             P("priority", "number", 2, "優先度")])
+def _tactics(ctx, i, p, s):
+    if not _run(i):
+        return {"attack": False}, "停止"
+    sig = (_num(p["enemy_range"], 320), _num(p["attack_cooldown"], 0.35),
+           _num(p["gas_margin"], 80), _num(p["gas_danger"], 160))
+    if s.get("sig") != sig or "policy" not in s:
+        s["policy"] = TacticalPolicy(PolicyConfig(
+            enemy_range=sig[0], attack_cooldown=sig[1],
+            gas_margin=sig[2], gas_danger=sig[3]))
+        s["sig"] = sig
+
+    def items(label):
+        return list(ctx.groups[label].items) if label and label in ctx.groups else []
+
+    bushes = items(str(p["bush"]))
+    enemies = items(str(p["enemy"]))
+    gas = GasField(items(str(p["gas"])), frame_size=(ctx.frame_w, ctx.frame_h))
+    dec = s["policy"].tick(ctx.now, ctx.me, bushes, enemies, gas,
+                           ctx.frame_w, ctx.frame_h)
+    if dec.move:
+        ctx.moves.append((_num(p["priority"], 2), dec.move, p["_id"]))
+    if dec.attack:
+        if str(p["attack_mode"]) == "click" and dec.attack_target is not None:
+            ctx.intents.clicks.append((dec.attack_target.x, dec.attack_target.y))
+        else:
+            ctx.intents.taps.append(str(p["attack_key"]))
+    clear = "∞" if dec.clearance == math.inf else f"{dec.clearance:.0f}"
+    tgt = f"→#{getattr(dec.target, 'id', '?')}" if dec.target is not None else ""
+    return {"attack": bool(dec.attack)}, f"{dec.mode}{tgt} / {dec.reason} / 余裕{clear}px"
 
 
 def _desc(d):
@@ -475,6 +639,13 @@ class Graph:
     def labels_used(self) -> set[str]:
         return {n["props"].get("label") for n in self.nodes.values()
                 if n["type"].type == "objects"} - {None, ""}
+
+    def release_holds(self):
+        """Called when input stops: forget held keys so a later live run presses again."""
+        for nid, n in self.nodes.items():
+            if n["type"].type == "hold_key":
+                self.state[nid]["down"] = False
+                self.state[nid].pop("until", None)
 
     def tick(self, ctx: Ctx) -> dict[str, dict]:
         """Runs every node once. Returns per-node status for the UI:

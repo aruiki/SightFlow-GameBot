@@ -1,0 +1,285 @@
+{
+  "name": "Brawl-like マクロ（テンプレート）",
+  "settings": {
+    "source": {
+      "type": "window",
+      "title": "LDPlayer",
+      "child": "TheRender",
+      "width": 960
+    },
+    "detector": {
+      "type": "color",
+      "color": [
+        {
+          "type": "color",
+          "label": "player",
+          "hsv": [
+            [
+              100,
+              150,
+              150
+            ],
+            [
+              118,
+              255,
+              255
+            ]
+          ],
+          "min_area": 150
+        },
+        {
+          "type": "color",
+          "label": "enemy",
+          "hsv": [
+            [
+              [
+                0,
+                150,
+                120
+              ],
+              [
+                8,
+                255,
+                255
+              ]
+            ],
+            [
+              [
+                172,
+                150,
+                120
+              ],
+              [
+                179,
+                255,
+                255
+              ]
+            ]
+          ],
+          "min_area": 150
+        }
+      ],
+      "region": [
+        {
+          "type": "region",
+          "label": "bush",
+          "hsv": [
+            [
+              55,
+              120,
+              90
+            ],
+            [
+              75,
+              255,
+              190
+            ]
+          ],
+          "min_area": 1500,
+          "morph": 5
+        },
+        {
+          "type": "region",
+          "label": "gas",
+          "hsv": [
+            [
+              [
+                130,
+                120,
+                80
+              ],
+              [
+                150,
+                255,
+                220
+              ]
+            ]
+          ],
+          "min_area": 3000,
+          "morph": 5
+        }
+      ]
+    },
+    "anchor": "player",
+    "input": {
+      "move_keys": {
+        "up": "w",
+        "down": "s",
+        "left": "a",
+        "right": "d"
+      }
+    },
+    "fps": 20,
+    "stuck_min_speed": 25,
+    "screens": [],
+    "attack_key": "space"
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "s_title",
+        "type": "screen_is",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "data": {
+          "screen": "title"
+        }
+      },
+      {
+        "id": "click_title",
+        "type": "click_at",
+        "position": {
+          "x": 260,
+          "y": 0
+        },
+        "data": {
+          "x": 0.5,
+          "y": 0.8,
+          "cooldown": 1.5
+        }
+      },
+      {
+        "id": "s_mode",
+        "type": "screen_is",
+        "position": {
+          "x": 0,
+          "y": 160
+        },
+        "data": {
+          "screen": "mode"
+        }
+      },
+      {
+        "id": "click_mode",
+        "type": "click_at",
+        "position": {
+          "x": 260,
+          "y": 160
+        },
+        "data": {
+          "x": 0.5,
+          "y": 0.6,
+          "cooldown": 1.5
+        }
+      },
+      {
+        "id": "s_lobby",
+        "type": "screen_is",
+        "position": {
+          "x": 0,
+          "y": 320
+        },
+        "data": {
+          "screen": "lobby"
+        }
+      },
+      {
+        "id": "click_start",
+        "type": "click_at",
+        "position": {
+          "x": 260,
+          "y": 320
+        },
+        "data": {
+          "x": 0.5,
+          "y": 0.85,
+          "cooldown": 1.5
+        }
+      },
+      {
+        "id": "s_match",
+        "type": "screen_is",
+        "position": {
+          "x": 0,
+          "y": 480
+        },
+        "data": {
+          "screen": "match"
+        }
+      },
+      {
+        "id": "tactics",
+        "type": "tactics",
+        "position": {
+          "x": 260,
+          "y": 480
+        },
+        "data": {
+          "bush": "bush",
+          "enemy": "enemy",
+          "gas": "gas",
+          "attack_mode": "key",
+          "attack_key": "space",
+          "enemy_range": 320,
+          "attack_cooldown": 0.35,
+          "gas_margin": 80,
+          "gas_danger": 160,
+          "priority": 2
+        }
+      },
+      {
+        "id": "s_result",
+        "type": "screen_is",
+        "position": {
+          "x": 0,
+          "y": 660
+        },
+        "data": {
+          "screen": "result"
+        }
+      },
+      {
+        "id": "click_retry",
+        "type": "click_at",
+        "position": {
+          "x": 260,
+          "y": 660
+        },
+        "data": {
+          "x": 0.5,
+          "y": 0.7,
+          "cooldown": 2.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "s_title.result-click_title.run",
+        "source": "s_title",
+        "sourceHandle": "result",
+        "target": "click_title",
+        "targetHandle": "run"
+      },
+      {
+        "id": "s_mode.result-click_mode.run",
+        "source": "s_mode",
+        "sourceHandle": "result",
+        "target": "click_mode",
+        "targetHandle": "run"
+      },
+      {
+        "id": "s_lobby.result-click_start.run",
+        "source": "s_lobby",
+        "sourceHandle": "result",
+        "target": "click_start",
+        "targetHandle": "run"
+      },
+      {
+        "id": "s_match.result-tactics.run",
+        "source": "s_match",
+        "sourceHandle": "result",
+        "target": "tactics",
+        "targetHandle": "run"
+      },
+      {
+        "id": "s_result.result-click_retry.run",
+        "source": "s_result",
+        "sourceHandle": "result",
+        "target": "click_retry",
+        "targetHandle": "run"
+      }
+    ]
+  }
+}

@@ -51,6 +51,7 @@ class Detector:
         self.roi = spec.get("roi")
         self.offset = spec.get("offset") or (0, 0)
         self.max_count = spec.get("max_count")
+        self.label_conf = {str(k): float(v) for k, v in (spec.get("label_conf") or {}).items()}
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         ox = oy = 0
@@ -60,9 +61,14 @@ class Detector:
             img = frame[y : y + h, x : x + w]
             ox, oy = x, y
         dets = self._detect(img)
+        dx, dy = ox + self.offset[0], oy + self.offset[1]
         for d in dets:
-            d.x += ox + self.offset[0]
-            d.y += oy + self.offset[1]
+            d.x += dx
+            d.y += dy
+            if d.polygon:
+                d.polygon = [(px + dx, py + dy) for px, py in d.polygon]
+        if self.label_conf:
+            dets = [d for d in dets if d.score >= self.label_conf.get(d.label, 0.0)]
         if self.max_count is not None:
             dets = sorted(dets, key=lambda d: (d.score, d.area), reverse=True)[: self.max_count]
         return dets
@@ -112,6 +118,55 @@ class ColorDetector(Detector):
                 continue
             fill = area / max(w * h, 1)
             out.append(Detection(self.label, x + w / 2, y + h / 2, w, h, score=round(fill, 3)))
+        return out
+
+
+@register("region")
+class RegionDetector(Detector):
+    """HSV area detection: returns the contour polygon, not just a box.
+
+    Used for poison gas and bushes, where "is this point inside?" matters.
+    hsv / min_area / max_area / morph work like the colour detector.
+    """
+
+    def __init__(self, spec, base_dir):
+        super().__init__(spec, base_dir)
+        self.label = spec["label"]
+        ranges = spec["hsv"]
+        if not isinstance(ranges[0][0], (list, tuple)):
+            ranges = [ranges]
+        self.ranges = [(np.array(lo, np.uint8), np.array(hi, np.uint8)) for lo, hi in ranges]
+        self.min_area = float(spec.get("min_area", 500))
+        self.max_area = float(spec.get("max_area", float("inf")))
+        self.morph = int(spec.get("morph", 3))
+
+    def _detect(self, img):
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        mask = np.zeros(hsv.shape[:2], np.uint8)
+        for lo, hi in self.ranges:
+            mask |= cv2.inRange(hsv, lo, hi)
+        if self.morph > 1:
+            kernel = np.ones((self.morph, self.morph), np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        out = []
+        for c in contours:
+            area = cv2.contourArea(c)
+            if not (self.min_area <= area <= self.max_area):
+                continue
+            x, y, w, h = cv2.boundingRect(c)
+            eps = max(1.0, 0.01 * cv2.arcLength(c, True))
+            poly = cv2.approxPolyDP(c, eps, True).reshape(-1, 2)
+            if len(poly) < 3:
+                poly = np.array([[x, y], [x + w, y], [x + w, y + h], [x, y + h]])
+            m = cv2.moments(c)
+            cx = m["m10"] / m["m00"] if m["m00"] else x + w / 2
+            cy = m["m01"] / m["m00"] if m["m00"] else y + h / 2
+            d = Detection(self.label, cx, cy, w, h, score=1.0)
+            d.region = True
+            d.polygon = [(float(px), float(py)) for px, py in poly]
+            out.append(d)
         return out
 
 

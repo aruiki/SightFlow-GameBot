@@ -14,6 +14,7 @@ AI に行動を学習させるのではなく、「何が見えているか」�
 
 - 📘 **[使い方ガイド](docs/guide.md)**（起動 → デモ → 最初のボット → 自分のゲームで使う → レシピ）
 - 📗 **[ノード一覧](docs/nodes.md)**（全ノードの入力・出力・設定）
+- 🖱 **[マクロの作り方](docs/macro.md)**（画面を登録 → 座標クリック → 草むら/敵/ガスの戦術）
 
 ## Web UI（ノードエディタ）
 
@@ -27,13 +28,15 @@ Node-RED のように**ノードを線でつなぐだけ**でボットの動き�
 pip install -r requirements.txt
 cd webui && npm install && npm run build && cd ..
 python -m sightflow web                       # デモ → http://127.0.0.1:8765
+python -m sightflow web demo/arena_macro.json  # 草むら/敵の戦術デモ
+python -m sightflow web --template brawl_like  # 画面認識マクロのテンプレート
 python -m sightflow web projects/mygame.json  # 自分用（なければ新規作成）
 ```
 
 - **左**: ノード一覧（見る / 選ぶ / 判断 / 操作 / 便利）。ドラッグで置く・ダブルクリックで追加。全ノードの説明は [ノード一覧](docs/nodes.md)
 - **中央**: ノードをつなぐキャンバス。線の色がデータの種類（リスト / 物体 / 数 / はい・いいえ）で、合わない線はつながりません。
   実行中は各ノードに**今の値**が出て、実際に動いた操作ノードは**光ります**。変更は自動保存されます
-- **右**: ライブ画面（検出枠・ラベル・ID・移動方向・照準）と設定。画面をクリックすると座標がコピーされます
+- **右**: ライブ画面（検出枠・ラベル・ID・移動方向・照準）、**画面**（画面の登録・一致度・しきい値）、**学習**（フレーム収集・箱注釈・自動ラベル・YOLO学習）、設定。画面をクリックすると座標がコピーされます
 - 上部のモード: **停止** / **見るだけ**（入力を送らない）/ **操作する**（実際にキーとマウスを操作。F12で停止）
 
 ### 検出器
@@ -218,6 +221,9 @@ flow:
 sightflow/
   detection.py   Detection / LabelGroup（条件式から見えるオブジェクト）
   detectors.py   color / template / yolo とプラグイン登録
+  screens.py     画面の登録・類似判定（template / pHash / SSIM）とヒステリシス
+  dataset.py     フレーム収集・YOLO注釈・自動ラベル・学習
+  behavior.py    草むら・敵・ガスの戦術（移動と攻撃のチャネル仲裁）
   expr.py        安全な条件式
   flow.py        状態・ルール・アクション・クールダウン
   io.py          画面キャプチャ（ウィンドウ / 範囲 / 画像 / Python）と入力（pynput）

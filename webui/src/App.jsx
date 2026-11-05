@@ -6,6 +6,8 @@ import {
 import '@xyflow/react/dist/style.css'
 import FlowNode from './FlowNode'
 import LivePanel from './LivePanel'
+import ScreenPanel from './ScreenPanel'
+import DatasetPanel from './DatasetPanel'
 import SettingsPanel from './SettingsPanel'
 import { TYPE_COLORS, api, connectLive, metaStore, useMeta } from './store'
 
@@ -96,6 +98,8 @@ function Editor() {
       setGraphError(st.graph_error)
       setNodes(st.project.graph.nodes || [])
       setEdges(st.project.graph.edges || [])
+      const scr = await api.get('/api/screens')
+      metaStore.set((m) => ({ ...m, screens: scr.screens || [] }))
       setTimeout(() => (loaded.current = true), 0)
     })()
     return connectLive((msg) => {
@@ -207,6 +211,7 @@ function Editor() {
       setEdges(p.graph?.edges || [])
       if (p.settings) applySettings(p.settings)
       setProject(p)
+      api.get('/api/screens').then((r) => metaStore.set((m) => ({ ...m, screens: r.screens || [] })))
     })
   }
 
@@ -277,12 +282,17 @@ function Editor() {
         <aside className="side">
           <div className="tabs">
             <button className={tab === 'live' ? 'on' : ''} onClick={() => setTab('live')}>ライブ画面</button>
+            <button className={tab === 'screens' ? 'on' : ''} onClick={() => setTab('screens')}>画面</button>
+            <button className={tab === 'dataset' ? 'on' : ''} onClick={() => setTab('dataset')}>学習</button>
             <button className={tab === 'settings' ? 'on' : ''} onClick={() => setTab('settings')}>設定</button>
           </div>
           <div className="side-body">
-            {tab === 'live' ? (
+            {tab === 'live' && (
               <LivePanel highlightLabel={highlightLabel} onPick={onPick} />
-            ) : (
+            )}
+            {tab === 'screens' && <ScreenPanel />}
+            {tab === 'dataset' && <DatasetPanel />}
+            {tab === 'settings' && (
               <SettingsPanel settings={project?.settings} labels={meta.labels} onApply={applySettings}
                 status={srvStatus.status} error={srvStatus.error} />
             )}

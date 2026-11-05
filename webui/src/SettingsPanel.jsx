@@ -11,7 +11,11 @@ const WORLD_MODELS = [
 export default function SettingsPanel({ settings, labels, onApply, status, error }) {
   const [s, setS] = useState(settings)
   const [windows, setWindows] = useState([])
+  const [models, setModels] = useState([])
   useEffect(() => setS(settings), [settings])
+  useEffect(() => {
+    api.get('/api/models').then((r) => setModels(r.models || [])).catch(() => {})
+  }, [])
   if (!s) return null
   const set = (path, value) =>
     setS((old) => {
@@ -76,6 +80,7 @@ export default function SettingsPanel({ settings, labels, onApply, status, error
             ['yolo_world', 'YOLO-World（言葉で指定）'],
             ['yolo', '学習済みYOLO'],
             ['color', '色（デモ用）'],
+            ['region', '領域（色）'],
           ].map(([k, t]) => (
             <button key={k} className={det.type === k ? 'on' : ''} onClick={() => set('detector.type', k)}>{t}</button>
           ))}
@@ -91,17 +96,29 @@ export default function SettingsPanel({ settings, labels, onApply, status, error
         {det.type === 'yolo' && (
           <div className="row">
             <span className="lbl">モデル</span>
-            <input placeholder="best.pt のパス、または yolo11s.pt" value={det.model || ''}
+            <input list="model-files" placeholder="best.pt のパス、または yolo11s.pt" value={det.model || ''}
               onChange={(e) => set('detector.model', e.target.value)} />
+            <datalist id="model-files">
+              {models.map((m) => (
+                <option key={m.name} value={m.name}>{Math.round(m.size / 1024 / 1024)}MB</option>
+              ))}
+            </datalist>
           </div>
         )}
         {det.type !== 'color' && (
+          <p className="hint">
+            models/: {models.length} 個
+            {models.length > 0 && `（${models.slice(0, 3).map((m) => m.name).join(', ')}${models.length > 3 ? ' …' : ''}）`}
+          </p>
+        )}
+        {(det.type === 'yolo_world' || det.type === 'yolo') && (
           <>
             <table className="classes">
               <thead>
                 <tr>
                   <th>ラベル（ノードで使う名前）</th>
                   <th>{det.type === 'yolo_world' ? '探すもの（英語で説明）' : 'モデルのクラス名'}</th>
+                  <th>しきい値</th>
                   <th />
                 </tr>
               </thead>
@@ -110,6 +127,12 @@ export default function SettingsPanel({ settings, labels, onApply, status, error
                   <tr key={i}>
                     <td><input value={c.label} onChange={(e) => set(`detector.classes.${i}.label`, e.target.value)} /></td>
                     <td><input value={c.prompt} onChange={(e) => set(`detector.classes.${i}.prompt`, e.target.value)} /></td>
+                    <td>
+                      <input type="number" min="0.05" max="0.99" step="0.05"
+                        placeholder={String(det.conf ?? 0.25)}
+                        value={c.conf ?? ''}
+                        onChange={(e) => set(`detector.classes.${i}.conf`, e.target.value === '' ? null : Number(e.target.value))} />
+                    </td>
                     <td><button className="ghost" onClick={() => set('detector.classes', classes.filter((_, j) => j !== i))}>✕</button></td>
                   </tr>
                 ))}
@@ -134,6 +157,9 @@ export default function SettingsPanel({ settings, labels, onApply, status, error
         )}
         {det.type === 'color' && (
           <p className="hint">色の範囲で検出します（付属デモ用）。設定はプロジェクトのJSONで編集します。</p>
+        )}
+        {det.type === 'region' && (
+          <p className="hint">色の領域（ポリゴン）で検出します。草むら・毒ガス向け。HSV・最小面積はプロジェクトのJSONの <code>region</code> に書きます。</p>
         )}
       </section>
 

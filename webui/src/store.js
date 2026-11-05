@@ -19,7 +19,7 @@ function createStore(initial) {
 }
 
 export const liveStore = createStore(null) // last tick message from the server
-export const metaStore = createStore({ defs: {}, categories: {}, labels: [] })
+export const metaStore = createStore({ defs: {}, categories: {}, labels: [], screens: [] })
 
 const EMPTY = {}
 export function useNodeStatus(id) {
@@ -60,6 +60,7 @@ export const api = {
     fetch(p, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json()),
   post: (p, body) =>
     fetch(p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json()),
+  del: (p) => fetch(p, { method: 'DELETE' }).then((r) => r.json()),
 }
 
 export function connectLive(onStatus) {

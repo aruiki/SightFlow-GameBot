@@ -17,6 +17,8 @@ class Detection:
     score: float = 1.0
     exists: bool = True
     id: int = -1          # tracking ID, stable across frames (-1 = untracked)
+    region: bool = False  # True for area detections (gas / bush), not boxes
+    polygon: list | None = None   # [(x, y), ...] in frame pixels, for region detections
     # Filled in relative to the anchor ("me") when the context is built.
     dx: float = 0.0
     dy: float = 0.0
@@ -51,9 +53,13 @@ def missing(label: str) -> Detection:
 
 
 def to_dict(d: Detection) -> dict:
-    return {"label": d.label, "id": d.id, "x": round(d.x, 1), "y": round(d.y, 1),
-            "w": round(d.w, 1), "h": round(d.h, 1), "score": round(d.score, 3),
-            "distance": None if d.distance == float("inf") else round(d.distance, 1)}
+    out = {"label": d.label, "id": d.id, "x": round(d.x, 1), "y": round(d.y, 1),
+           "w": round(d.w, 1), "h": round(d.h, 1), "score": round(d.score, 3),
+           "distance": None if d.distance == float("inf") else round(d.distance, 1)}
+    if d.region:
+        out["region"] = True
+        out["polygon"] = [[round(float(x), 1), round(float(y), 1)] for x, y in (d.polygon or [])]
+    return out
 
 
 @dataclass

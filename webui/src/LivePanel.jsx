@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { labelColor, useLive } from './store'
+import { api, labelColor, useLive } from './store'
 
 function arrow(ctx, x1, y1, x2, y2, color, width = 3) {
   const a = Math.atan2(y2 - y1, x2 - x1)
@@ -23,6 +23,16 @@ export default function LivePanel({ highlightLabel, onPick }) {
   const canvasRef = useRef(null)
   const imgRef = useRef(new Image())
   const [hover, setHover] = useState(null)
+  const [paused, setPaused] = useState(false)
+
+  const playback = async (action) => {
+    const r = await api.post('/api/playback', { action })
+    if (r.ok) setPaused(r.paused)
+  }
+
+  useEffect(() => {
+    if (typeof live?.paused === 'boolean') setPaused(live.paused)
+  }, [live?.paused])
 
   useEffect(() => {
     if (!live?.image) return
@@ -39,10 +49,22 @@ export default function LivePanel({ highlightLabel, onPick }) {
       for (const d of live.dets) {
         const dim = highlightLabel && d.label !== highlightLabel
         const c = labelColor(d.label)
+        const lw = Math.max(2, live.w / 400)
         ctx.globalAlpha = dim ? 0.25 : 1
         ctx.strokeStyle = c
         ctx.lineWidth = lw
-        ctx.strokeRect(d.x - d.w / 2, d.y - d.h / 2, d.w, d.h)
+        if (d.polygon && d.polygon.length >= 3) {
+          ctx.beginPath()
+          d.polygon.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)))
+          ctx.closePath()
+          ctx.globalAlpha = dim ? 0.08 : 0.18
+          ctx.fillStyle = c
+          ctx.fill()
+          ctx.globalAlpha = dim ? 0.25 : 1
+          ctx.stroke()
+        } else {
+          ctx.strokeRect(d.x - d.w / 2, d.y - d.h / 2, d.w, d.h)
+        }
         const tag = `${d.label} #${d.id}`
         const tw = ctx.measureText(tag).width + 8
         const th = Math.max(16, live.w / 40)
@@ -94,6 +116,21 @@ export default function LivePanel({ highlightLabel, onPick }) {
   const t = live?.timing
   return (
     <div className="live">
+      {live?.screen && (
+        <div className={`screen-now ${live.screen.stable ? 'stable' : ''}`}>
+          <span>画面</span>
+          <b>{live.screen.name || '不明'}</b>
+          <em>{Math.round((live.screen.score || 0) * 100)}%</em>
+        </div>
+      )}
+      {live?.mode && live.mode !== 'stop' && (
+        <div className="playback">
+          <button className="ghost" onClick={() => playback(paused ? 'resume' : 'pause')}>
+            {paused ? '▶ 再開' : '⏸ 一時停止'}
+          </button>
+          <button className="ghost" onClick={() => playback('step')}>⏭ 1フレーム</button>
+        </div>
+      )}
       <div className="live-canvas">
         {live?.image ? (
           <canvas
@@ -127,6 +164,18 @@ export default function LivePanel({ highlightLabel, onPick }) {
           <div><span>判断</span><b>{t?.logic}ms</b></div>
           <div><span>速度</span><b>{live.motion?.speed}px/s</b></div>
           <div><span>引っかかり</span><b>{live.motion?.stuck}s</b></div>
+        </div>
+      )}
+      {live?.dets?.length > 0 && (
+        <div className="det-list">
+          <div className="det-head"><span>物体</span><span>信頼度</span><span>距離</span></div>
+          {live.dets.slice(0, 8).map((d, i) => (
+            <div className="det-row" key={`${d.label}-${d.id}-${i}`}>
+              <span style={{ color: labelColor(d.label) }}>{d.label} #{d.id}</span>
+              <b>{Math.round((d.score ?? 0) * 100)}%</b>
+              <span>{d.distance == null ? '-' : `${Math.round(d.distance)}px`}</span>
+            </div>
+          ))}
         </div>
       )}
       {live && (

@@ -203,6 +203,15 @@ class InputBackend:
     def hold(self, key: str, seconds: float):
         pass
 
+    def key_down(self, key: str):
+        pass
+
+    def key_up(self, key: str):
+        pass
+
+    def release_all(self):
+        pass
+
     def click(self, x: float, y: float):  # frame coordinates
         pass
 
@@ -236,6 +245,7 @@ class KeyboardMouseInput(InputBackend):
         self.deadzone = deadzone
         self.tap_seconds = tap_seconds
         self.held: set = set()
+        self.keys_down: set = set()
 
     def _key(self, name: str):
         name = str(name)
@@ -271,6 +281,24 @@ class KeyboardMouseInput(InputBackend):
         time.sleep(seconds)
         self._kb.release(k)
 
+    def key_down(self, key):
+        k = self._key(key)
+        if k not in self.keys_down:
+            self._kb.press(k)
+            self.keys_down.add(k)
+
+    def key_up(self, key):
+        k = self._key(key)
+        if k in self.keys_down:
+            self._kb.release(k)
+            self.keys_down.discard(k)
+
+    def release_all(self):
+        for k in list(self.keys_down):
+            self._kb.release(k)
+        self.keys_down.clear()
+        self.set_move(None)
+
     def click(self, x, y):
         ox, oy = self.source.origin
         self._mouse.position = (int(ox + x), int(oy + y))
@@ -292,7 +320,7 @@ class KeyboardMouseInput(InputBackend):
             self._mouse.release(self._Button.left)
 
     def close(self):
-        self.set_move(None)
+        self.release_all()
 
 
 def build_input(spec: dict, source: FrameSource) -> InputBackend:

@@ -2,13 +2,26 @@ import { memo } from 'react'
 import { Handle, Position, useEdges, useReactFlow } from '@xyflow/react'
 import { IO_NAMES, TYPE_COLORS, useMeta, useNodeStatus } from './store'
 
-function PropEditor({ prop, value, onChange, labels, disabled }) {
+function PropEditor({ prop, value, onChange, labels, screens, disabled }) {
   const common = { className: 'nodrag prop-input', disabled }
   if (prop.kind === 'select') {
     return (
       <select {...common} value={value ?? prop.default} onChange={(e) => onChange(e.target.value)}>
         {prop.options.map((o) => (
           <option key={o} value={o}>{o}</option>
+        ))}
+      </select>
+    )
+  }
+  if (prop.kind === 'screen') {
+    const opts = screens || []
+    const known = opts.some((s) => s.id === value || s.name === value)
+    return (
+      <select {...common} value={value ?? ''} onChange={(e) => onChange(e.target.value)}>
+        <option value="">（選ぶ）</option>
+        {value && !known && <option value={value}>{value}（名前で一致）</option>}
+        {opts.map((s) => (
+          <option key={s.id} value={s.id}>{s.name}</option>
         ))}
       </select>
     )
@@ -38,7 +51,7 @@ function PropEditor({ prop, value, onChange, labels, disabled }) {
 }
 
 function FlowNode({ id, type, data, selected }) {
-  const { defs, categories, labels, ioNames } = useMeta()
+  const { defs, categories, labels, screens, ioNames } = useMeta()
   const ioName = (n) => ioNames?.[n] ?? IO_NAMES[n] ?? n
   const def = defs[type]
   const st = useNodeStatus(id)
@@ -93,8 +106,8 @@ function FlowNode({ id, type, data, selected }) {
             return (
               <label key={p.name} className={linked ? 'linked' : ''}>
                 <span>{p.label}</span>
-                <PropEditor prop={p} value={data[p.name]} labels={labels} disabled={linked}
-                  onChange={(v) => updateNodeData(id, { [p.name]: v })} />
+                <PropEditor prop={p} value={data[p.name]} labels={labels} screens={screens}
+                  disabled={linked} onChange={(v) => updateNodeData(id, { [p.name]: v })} />
               </label>
             )
           })}

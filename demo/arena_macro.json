@@ -1,0 +1,212 @@
+{
+  "name": "Bush Arena 戦術デモ",
+  "settings": {
+    "source": {
+      "type": "demo",
+      "seed": 0
+    },
+    "detector": {
+      "type": "color",
+      "color": [
+        {
+          "type": "color",
+          "label": "player",
+          "hsv": [
+            [
+              100,
+              150,
+              150
+            ],
+            [
+              118,
+              255,
+              255
+            ]
+          ],
+          "min_area": 150
+        },
+        {
+          "type": "color",
+          "label": "enemy",
+          "hsv": [
+            [
+              [
+                0,
+                150,
+                120
+              ],
+              [
+                8,
+                255,
+                255
+              ]
+            ],
+            [
+              [
+                172,
+                150,
+                120
+              ],
+              [
+                179,
+                255,
+                255
+              ]
+            ]
+          ],
+          "min_area": 150
+        },
+        {
+          "type": "color",
+          "label": "coin",
+          "hsv": [
+            [
+              20,
+              200,
+              200
+            ],
+            [
+              30,
+              255,
+              255
+            ]
+          ],
+          "min_area": 40
+        },
+        {
+          "type": "color",
+          "label": "gameover",
+          "hsv": [
+            [
+              145,
+              150,
+              100
+            ],
+            [
+              155,
+              255,
+              200
+            ]
+          ],
+          "min_area": 8000
+        }
+      ],
+      "model": "yolov8s-worldv2.pt",
+      "conf": 0.2,
+      "imgsz": 640,
+      "classes": [
+        {
+          "label": "person",
+          "prompt": "person"
+        }
+      ],
+      "region": [
+        {
+          "type": "region",
+          "label": "bush",
+          "hsv": [
+            [
+              55,
+              120,
+              90
+            ],
+            [
+              75,
+              255,
+              190
+            ]
+          ],
+          "min_area": 1500,
+          "morph": 5
+        }
+      ]
+    },
+    "anchor": "player",
+    "input": {
+      "move_keys": {
+        "up": "w",
+        "down": "s",
+        "left": "a",
+        "right": "d"
+      }
+    },
+    "fps": 20,
+    "stuck_min_speed": 25,
+    "screens": [
+      {
+        "id": "s_13624727",
+        "name": "arena",
+        "template": "screens/s_13624727.png",
+        "templates": [
+          "screens/s_13624727.png"
+        ],
+        "template_count": 1,
+        "roi": null,
+        "method": "template",
+        "threshold": 0.8,
+        "enter_frames": 1,
+        "exit_frames": 2,
+        "hysteresis": 0.08,
+        "has_image": false
+      },
+      {
+        "id": "s_bafcec62",
+        "name": "arena",
+        "template": "screens/s_bafcec62.png",
+        "templates": [
+          "screens/s_bafcec62.png"
+        ],
+        "template_count": 1,
+        "roi": null,
+        "method": "template",
+        "threshold": 0.8,
+        "enter_frames": 1,
+        "exit_frames": 2,
+        "hysteresis": 0.08,
+        "has_image": true
+      }
+    ]
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "tactics",
+        "type": "tactics",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "data": {
+          "bush": "bush",
+          "enemy": "enemy",
+          "gas": "",
+          "attack_mode": "click",
+          "attack_key": "space",
+          "enemy_range": 320,
+          "attack_cooldown": 0.35,
+          "gas_margin": 80,
+          "gas_danger": 160,
+          "priority": 2
+        }
+      },
+      {
+        "id": "dbg",
+        "type": "debug",
+        "position": {
+          "x": 430,
+          "y": 0
+        },
+        "data": {}
+      }
+    ],
+    "edges": [
+      {
+        "id": "tactics.attack-dbg.in",
+        "source": "tactics",
+        "sourceHandle": "attack",
+        "target": "dbg",
+        "targetHandle": "in"
+      }
+    ]
+  }
+}

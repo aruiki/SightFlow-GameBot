@@ -59,6 +59,15 @@ class SimBridge:
     def hold(self, key, seconds):
         self._keys.append(str(key).lower())
 
+    def key_down(self, key):
+        self._keys.append(str(key).lower())
+
+    def key_up(self, key):
+        pass
+
+    def release_all(self):
+        self._move = None
+
     def click(self, x, y):
         self._clicks.append((x, y))
 
