@@ -19,10 +19,26 @@
 
 - Windows 10/11（ウィンドウの取り込みとキー操作は Windows 向けに作っています）
 - Python 3.10 以上
-- Node.js 18 以上（画面部分をビルドするときだけ）
 - NVIDIA の GPU（なくても動きますが、YOLO-World がかなり遅くなります）
+- Node.js 18 以上（画面を改造する場合だけ。使うだけなら不要）
 
-### 初回だけ
+### かんたん起動（おすすめ）
+
+1. [Python 3.10 以上](https://www.python.org/downloads/windows/) を入れる（**Add python.exe to PATH** にチェック）
+2. リポジトリを **Code → Download ZIP** で落として展開（または `git clone`）
+3. **`start.bat` をダブルクリック**
+
+初回だけ、`%USERPROFILE%\.venvs\sightflow` に仮想環境を作り、PyTorch（GPUがあればCUDA版）と `requirements.txt` を自動で入れます。数GBのダウンロードがあるので数分〜十数分待ちます。
+準備できるとブラウザで http://127.0.0.1:8765 が開きます。2回目からはすぐ起動します。
+
+| 用途 | 起動 |
+|---|---|
+| デモ（草むら・敵） | `start-demo.bat` |
+| 対象アプリ用テンプレート | `start-brawl-like.bat` |
+| 自分用プロジェクト | `start.bat projects\mygame.json` |
+| ポート変更 | `start.bat projects\mygame.json --port 9000` |
+
+### 手動で入れる場合
 
 ```bash
 git clone https://github.com/aruiki/SightFlow-GameBot.git
@@ -32,16 +48,12 @@ cd SightFlow-GameBot
 python -m venv C:\Users\<you>\.venvs\sightflow
 C:\Users\<you>\.venvs\sightflow\Scripts\activate
 
-# GPU 版 PyTorch → そのほかの部品
+# GPU 版 PyTorch（GPU がなければ cu128 を cpu に）→ そのほかの部品
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 pip install -r requirements.txt
-
-# 画面部分をビルド
-cd webui
-npm install
-npm run build
-cd ..
 ```
+
+画面はビルド済み（`webui/dist`）なので、使うだけなら `npm` は不要です。
 
 ### 毎回の起動
 

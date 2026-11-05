@@ -1,0 +1,2 @@
+*.bat text eol=crlf
+webui/dist/** -diff linguist-generated

@@ -24,14 +24,40 @@ Node-RED のように**ノードを線でつなぐだけ**でボットの動き�
 検出された物体には**ラベル**（enemy など）と**追跡ID**（#3 など、同じ物体なら同じ番号）が付き、
 それを元に「いちばん近い敵を狙う」「同じ敵を追い続ける」といった処理を組み立てます。
 
+## すぐ使う（Windows）
+
+1. [Python 3.10 以上](https://www.python.org/downloads/windows/) を入れる（インストール時に **Add python.exe to PATH** にチェック）
+2. このリポジトリを **Code → Download ZIP** で落として展開（または `git clone`）
+3. フォルダの **`start.bat` をダブルクリック**
+
+初回だけ、短いパス（`%USERPROFILE%\.venvs\sightflow`）に仮想環境を作り、PyTorch（NVIDIA GPU があれば CUDA 版、なければ CPU 版）と `requirements.txt` を自動で入れます（数GB・数分〜十数分）。
+準備ができるとブラウザで **http://127.0.0.1:8765** が開き、デモが表示されます。2回目からはすぐ起動します。**Node.js は不要**です（画面はビルド済み）。
+
+| やりたいこと | 操作 |
+|---|---|
+| デモ（草むら・敵の戦術） | **`start-demo.bat`** |
+| 対象アプリ用テンプレート | **`start-brawl-like.bat`**（`projects\brawl_like.json` を作成/使用） |
+| 自分用プロジェクト | `start.bat projects\mygame.json`（なければ新規作成） |
+| ポート変更 | `start.bat projects\mygame.json --port 9000` |
+
+- 初回の物体検出時にモデルの重み（`models/`）を自動でダウンロードします（インターネットが必要）
+- 止めるときはコンソールで **Ctrl+C** または画面を閉じる。ボットは **F12** で停止
+- うまく起動しないときは、`%USERPROFILE%\.venvs\sightflow` を消して `start.bat` を再実行（最初から入れ直します）
+
+### 手動で入れる場合
+
 ```bash
+python -m venv C:\Users\<you>\.venvs\sightflow      # 短いパスに作る
+C:\Users\<you>\.venvs\sightflow\Scripts\activate
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128   # GPUなしは .../whl/cpu
 pip install -r requirements.txt
-cd webui && npm install && npm run build && cd ..
 python -m sightflow web                       # デモ → http://127.0.0.1:8765
 python -m sightflow web demo/arena_macro.json  # 草むら/敵の戦術デモ
 python -m sightflow web --template brawl_like  # 画面認識マクロのテンプレート
 python -m sightflow web projects/mygame.json  # 自分用（なければ新規作成）
 ```
+
+画面部分（`webui/src`）を変更したときだけ、Node.js 18 以上で `cd webui && npm install && npm run build` を実行し、`webui/dist` も一緒にコミットしてください。
 
 - **左**: ノード一覧（見る / 選ぶ / 判断 / 操作 / 便利）。ドラッグで置く・ダブルクリックで追加。全ノードの説明は [ノード一覧](docs/nodes.md)
 - **中央**: ノードをつなぐキャンバス。線の色がデータの種類（リスト / 物体 / 数 / はい・いいえ）で、合わない線はつながりません。
