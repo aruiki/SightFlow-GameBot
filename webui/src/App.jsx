@@ -305,6 +305,7 @@ function Editor() {
   }
 
   const applySettings = async (s) => {
+    setTab('settings')
     await api.put('/api/settings', s)
     setProject((p) => ({ ...p, settings: s }))
     setSrvStatus({ status: 'loading', error: null })
@@ -453,7 +454,8 @@ function Editor() {
               <LivePanel highlightLabel={highlightLabel} onPick={onPick} />
             ) : (
               <SettingsPanel settings={project?.settings} labels={meta.labels} onApply={applySettings}
-                status={srvStatus.status} error={srvStatus.error} />
+                status={srvStatus.status} error={srvStatus.error}
+                onPickFromLive={() => { setTab('live'); setToast('ライブ画面で拾いたい色をクリックしてください'); setTimeout(() => setToast(null), 2500) }} />
             )}
           </div>
         </aside>}

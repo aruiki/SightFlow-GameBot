@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { labelColor, useLive } from './store'
+import { eyedropper, labelColor, useLive } from './store'
 
 function arrow(ctx, x1, y1, x2, y2, color, width = 3) {
   const a = Math.atan2(y2 - y1, x2 - x1)
@@ -100,8 +100,22 @@ export default function LivePanel({ highlightLabel, onPick }) {
             ref={canvasRef}
             onMouseMove={(e) => setHover(hit(e))}
             onMouseLeave={() => setHover(null)}
+            style={eyedropper.cb ? { cursor: 'copy' } : undefined}
             onClick={(e) => {
               const [x, y] = toFrame(e)
+              if (eyedropper.cb) {   // pick a colour from the raw frame (without the overlay)
+                const img = imgRef.current
+                const k = img.naturalWidth / live.w
+                const px = document.createElement('canvas')
+                px.width = px.height = 1
+                const c2 = px.getContext('2d', { willReadFrequently: true })
+                c2.drawImage(img, x * k, y * k, 1, 1, 0, 0, 1, 1)
+                const [r, g, b] = c2.getImageData(0, 0, 1, 1).data
+                const cb = eyedropper.cb
+                eyedropper.cb = null
+                cb([r, g, b])
+                return
+              }
               onPick?.({ x: x / canvasRef.current.width, y: y / canvasRef.current.height, det: hit(e) })
             }}
           />

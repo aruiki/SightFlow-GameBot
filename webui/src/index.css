@@ -192,3 +192,14 @@ main.with-pal.with-side { grid-template-columns: 220px minmax(0, 1fr) clamp(330p
 .empty-hint b { color: #9a9aa8; }
 .top { gap: 12px; }
 .modes { margin: 0 auto; }
+
+.color-rule { background: #1f1f23; border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; margin-bottom: 8px; }
+.swatch { flex: 0 0 22px; height: 22px; border-radius: 6px; border: 1px solid #555; }
+.row.hsv { flex-wrap: wrap; gap: 6px; }
+.hsv-pair { display: flex; align-items: center; gap: 3px; }
+.hsv-pair small { color: var(--muted); }
+.hsv-pair input { width: 60px; flex: none; padding: 5px 4px; text-align: center; }
+.hsv-pair input::-webkit-inner-spin-button { display: none; }
+.win-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.chip { background: #1a1a1e; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip.on, .chip:hover { color: var(--text); border-color: var(--accent); }

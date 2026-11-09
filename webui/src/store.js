@@ -83,3 +83,38 @@ export function connectLive(onStatus) {
     ws?.close()
   }
 }
+
+// ------------------------------------------------------------ eyedropper
+// SettingsPanel sets `eyedropper.cb`; the next click on the live screen calls it with [r, g, b].
+export const eyedropper = { cb: null }
+
+/** RGB (0-255) -> OpenCV HSV (H 0-179, S/V 0-255). */
+export function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn
+  let h = 0
+  if (d) {
+    if (mx === r) h = ((g - b) / d) % 6
+    else if (mx === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  return [Math.round(h / 2) % 180, Math.round(mx ? (d / mx) * 255 : 0), Math.round(mx * 255)]
+}
+
+/** A colour range around a picked HSV colour; red-ish hues wrap around 0/179 so they become two ranges. */
+export function rangesAround([h, s, v], tolH = 10, tolS = 70, tolV = 70) {
+  const lo = (x, t, min = 0) => Math.max(min, x - t)
+  const hi = (x, t, max = 255) => Math.min(max, x + t)
+  const sl = lo(s, tolS), sh = hi(s, tolS), vl = lo(v, tolV), vh = hi(v, tolV)
+  if (h - tolH < 0) return [[[0, sl, vl], [h + tolH, sh, vh]], [[180 + h - tolH, sl, vl], [179, sh, vh]]]
+  if (h + tolH > 179) return [[[h - tolH, sl, vl], [179, sh, vh]], [[0, sl, vl], [h + tolH - 180, sh, vh]]]
+  return [[[h - tolH, sl, vl], [h + tolH, sh, vh]]]
+}
+
+export function hsvToCss([h, s, v]) {
+  const S = s / 255, V = v / 255, H = (h * 2) / 60
+  const f = (n) => { const k = (n + H) % 6; return V - V * S * Math.max(0, Math.min(k, 4 - k, 1)) }
+  return `rgb(${Math.round(f(5) * 255)} ${Math.round(f(3) * 255)} ${Math.round(f(1) * 255)})`
+}
