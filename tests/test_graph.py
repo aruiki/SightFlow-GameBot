@@ -166,3 +166,47 @@ def test_nodes_doc_is_up_to_date():
     from sightflow.graph import nodes_markdown
     doc = (ROOT / "docs" / "nodes.md").read_text(encoding="utf-8")
     assert doc == nodes_markdown(), "run: python -m sightflow nodes-doc > docs/nodes.md"
+
+
+# ------------------------------------------------------------ macro (record & replay)
+STEPS = [{"kind": "click", "x": 0.5, "y": 0.5, "wait": 0},
+         {"kind": "key", "key": "space", "wait": 1.0},
+         {"kind": "click", "x": 0.1, "y": 0.2, "wait": 0.5}]
+
+
+def _macro_tick(gr, now):
+    c = ctx(now=now)
+    st = gr.tick(c)
+    return c.intents, st["m"]["text"]
+
+
+def test_macro_plays_steps_in_time_once():
+    gr = g([("m", "macro", {"steps": STEPS})], [])
+    it, _ = _macro_tick(gr, 0.0)
+    assert it.clicks == [(200.0, 150.0)] and not it.taps          # first step fires right away
+    it, txt = _macro_tick(gr, 0.5)
+    assert not it.clicks and not it.taps and txt.startswith("再生中")
+    it, _ = _macro_tick(gr, 1.0)
+    assert it.taps == ["space"]
+    it, _ = _macro_tick(gr, 1.6)
+    assert it.clicks == [(40.0, 60.0)]
+    it, txt = _macro_tick(gr, 5.0)                                  # "1回": does not restart
+    assert not it.clicks and not it.taps and txt.startswith("待機")
+
+
+def test_macro_repeat_and_stop():
+    gr = g([("n", "number", {"value": 1}), ("m", "macro", {"steps": STEPS[:2], "repeat": "ずっと"})], [])
+    for t in (0.0, 1.0):
+        _macro_tick(gr, t)
+    it, _ = _macro_tick(gr, 1.1)                                    # restarts from the first step
+    assert it.clicks == [(200.0, 150.0)]
+
+
+def test_recorder_to_steps_drops_outside_clicks_and_stop_key():
+    from sightflow.recorder import to_steps
+    events = [(10.0, "click", 150, 120), (10.4, "key", "a"), (11.0, "click", 5000, 5000),
+              (11.5, "key", "f12"), (12.0, "click", 250, 220)]
+    steps = to_steps(events, origin=(100, 100), size=(200, 200))
+    assert steps == [{"kind": "click", "x": 0.25, "y": 0.1, "wait": 0.0},
+                     {"kind": "key", "key": "a", "wait": 0.4},
+                     {"kind": "click", "x": 0.75, "y": 0.6, "wait": 1.6}]

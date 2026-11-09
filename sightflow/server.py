@@ -23,7 +23,7 @@ from pathlib import Path
 
 import cv2
 from fastapi import Body, FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .bot import build_groups
@@ -37,9 +37,23 @@ from .tracking import CentroidTracker
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "webui" / "dist"
 DEFAULT_PROJECT = ROOT / "demo" / "arena_project.json"
+PROJECTS = ROOT / "projects"
 
 
-def detector_specs(det: dict) -> list[dict]:
+def detector_specs(det: dict, base_dir: Path | None = None) -> list[dict]:
+    """Detector specs for the project's main detector plus any cut-out images."""
+    specs = _main_detector_specs(det)
+    for im in det.get("images", []) or []:
+        if im.get("label") and im.get("image"):
+            path = Path(im["image"])
+            if base_dir is not None and not path.is_absolute():
+                path = base_dir / path
+            specs.append({"type": "template", "label": im["label"], "image": str(path),
+                          "threshold": float(im.get("threshold", 0.8))})
+    return specs
+
+
+def _main_detector_specs(det: dict) -> list[dict]:
     kind = det.get("type", "yolo_world")
     common = {k: det[k] for k in ("conf", "imgsz", "device", "iou") if k in det}
     if kind == "yolo_world":
@@ -51,6 +65,8 @@ def detector_specs(det: dict) -> list[dict]:
         return [{"type": "yolo", "model": det.get("model") or "yolo11s.pt", "labels": labels or None, **common}]
     if kind == "color":
         return list(det.get("color", []))
+    if kind == "none":
+        return []
     raise ValueError(f"unknown detector type {kind!r}")
 
 
@@ -72,6 +88,47 @@ def new_project(name: str) -> dict:
     }
 
 
+def safe_project_name(name: str) -> str:
+    """A file-name-safe stem from whatever the user typed (Japanese is fine)."""
+    stem = "".join(c if (c.isalnum() or c in "-_ ") else "_" for c in (name or "").strip())
+    return stem.strip(" .")[:60] or "project"
+
+
+def list_projects(current: Path, known: set[Path] = frozenset()) -> list[dict]:
+    """Projects in projects/, the demo, the current file, and any opened this session."""
+    files = {p.resolve() for p in PROJECTS.glob("*.json")} if PROJECTS.exists() else set()
+    files |= {p.resolve() for p in known}
+    files.add(current.resolve())
+    if DEFAULT_PROJECT.exists():
+        files.add(DEFAULT_PROJECT.resolve())
+    out = []
+    for p in sorted(files, key=lambda x: x.name.lower()):
+        try:
+            name = json.loads(p.read_text(encoding="utf-8")).get("name") or p.stem
+        except Exception:
+            continue
+        out.append({"file": str(p), "name": name, "current": p == current.resolve()})
+    return out
+
+
+def friendly_error(e: Exception) -> str:
+    """Turn the common setup errors into a Japanese message that says what to do."""
+    msg = str(e)
+    if "ultralytics" in msg:
+        return ("YOLO の部品が入っていません。コマンドで `pip install ultralytics` を実行するか、"
+                "検出器を「色」か「画像だけ」にしてください")
+    if "no visible window" in msg:
+        return ("指定した名前のウィンドウが見つかりません。ゲームを起動してから、"
+                "設定の「ウィンドウ」で一覧から選び直してください")
+    if "Windows-only" in msg:
+        return "ウィンドウの取り込みは Windows 専用です。設定で「画面の範囲」を選んでください"
+    if isinstance(e, FileNotFoundError):
+        return f"ファイルが見つかりません: {msg}"
+    if "cannot read video" in msg:
+        return "動画を読み込めませんでした。ファイルの場所と形式（.mp4 など）を確認してください"
+    return f"{type(e).__name__}: {msg}"
+
+
 def _labels_of(d) -> list[str]:
     if hasattr(d, "labels"):
         return list(d.labels)
@@ -83,6 +140,7 @@ def _labels_of(d) -> list[str]:
 class Engine:
     def __init__(self, project_path: Path):
         self.project_path = project_path
+        self.known_paths: set[Path] = {project_path}
         self.project = json.loads(project_path.read_text(encoding="utf-8"))
         self.lock = threading.RLock()
         self.mode = "stop"
@@ -99,6 +157,9 @@ class Engine:
         self._sim_input = None
         self.tracker = CentroidTracker()
         self.motion = MotionTracker()
+        self.last_frame = None
+        self.recorder = None
+        self.recorded: list[dict] | None = None
         self.set_graph(self.project.get("graph", {"nodes": [], "edges": []}), save=False)
         threading.Thread(target=self._load_settings, daemon=True).start()
         threading.Thread(target=self._loop, daemon=True).start()
@@ -109,8 +170,74 @@ class Engine:
         self.project_path.write_text(json.dumps(self.project, ensure_ascii=False, indent=2),
                                      encoding="utf-8")
 
+    def switch_project(self, path: Path):
+        """Open another project file (mode goes back to stop)."""
+        project = json.loads(path.read_text(encoding="utf-8"))
+        with self.lock:
+            self.mode = "stop"
+            if self._live_input:
+                self._live_input.set_move(None)
+            self.project_path = path
+            self.known_paths.add(path)
+            self.project = project
+            self.graph = None
+        self.set_graph(project.get("graph", {"nodes": [], "edges": []}), save=False)
+        threading.Thread(target=self._load_settings, daemon=True).start()
+
+    # ------------------------------------------------------------- record (FRep-style)
+    def grab_frame(self):
+        if self.last_frame is None and self.source is not None:
+            with self.lock:
+                self.last_frame = self.source.grab()
+        return self.last_frame
+
+    def start_recording(self):
+        from .recorder import Recorder
+
+        if self.status != "running" or self.source is None:
+            raise RuntimeError("画面の取り込みが準備できていません（設定を確認してください）")
+        self.set_mode("stop")
+        frame = self.grab_frame()
+        h, w = frame.shape[:2]
+        rec = Recorder(self.source.origin, (w, h))
+        rec.start(own_keyboard=not getattr(self, "_has_key_listener", False))
+        self.recorder, self.recorded = rec, None
+
+    def stop_recording(self) -> list[dict]:
+        if self.recorder is not None:
+            self.recorded = self.recorder.stop()
+            self.recorder = None
+        return self.recorded or []
+
+    # ------------------------------------------------------------- cut-out images
+    def images_dir(self) -> Path:
+        return self.project_path.parent / f"{self.project_path.stem}_images"
+
+    def add_template(self, label: str, x: int, y: int, w: int, h: int, threshold: float = 0.8):
+        frame = self.grab_frame()
+        if frame is None:
+            raise RuntimeError("まだ画面が取り込まれていません。先に「見るだけ」を押してください")
+        H, W = frame.shape[:2]
+        x, y = max(0, int(x)), max(0, int(y))
+        w, h = min(int(w), W - x), min(int(h), H - y)
+        if w < 4 or h < 4:
+            raise ValueError("切り取る範囲が小さすぎます")
+        d = self.images_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        fname = f"{safe_project_name(label)}.png"
+        cv2.imwrite(str(d / fname), frame[y:y + h, x:x + w])
+        rel = f"{d.name}/{fname}"
+        settings = json.loads(json.dumps(self.project.get("settings", {})))
+        det = settings.setdefault("detector", {})
+        images = [im for im in det.get("images", []) if im.get("label") != label]
+        images.append({"label": label, "image": rel, "threshold": threshold})
+        det["images"] = images
+        self.set_settings(settings)
+        return settings
+
     def state(self) -> dict:
         return {"project": self.project, "mode": self.mode, "status": self.status,
+                "recording": self.recorder is not None,
                 "error": self.error, "graph_error": self.graph_error, "labels": self.labels,
                 "project_file": str(self.project_path.name)}
 
@@ -158,7 +285,7 @@ class Engine:
                             "seed": src_spec.get("seed", 0),
                             "dt": 1.0 / float(s.get("fps", 20))}
             source = build_source(src_spec, ROOT / "demo")
-            detectors = build_detectors(detector_specs(s.get("detector", {})), ROOT)
+            detectors = build_detectors(detector_specs(s.get("detector", {}), self.project_path.parent), ROOT)
             labels = [l for d in detectors for l in _labels_of(d)]
             sim_input = source.input_backend() if hasattr(source, "input_backend") else None
             live_input = None
@@ -174,16 +301,22 @@ class Engine:
             self.status = "running"
         except Exception as e:
             traceback.print_exc()
-            self.status, self.error = "error", f"{type(e).__name__}: {e}"
+            self.status, self.error = "error", friendly_error(e)
 
     def _start_stop_key(self):
         try:
             from pynput import keyboard
 
             def on_press(k):
-                if k == keyboard.Key.f12 and self.mode == "live":
+                rec = self.recorder
+                if rec is not None and k != keyboard.Key.f12:
+                    rec.add_key(k)
+                if k == keyboard.Key.f12 and self.recorder is not None:
+                    self.stop_recording()
+                elif k == keyboard.Key.f12 and self.mode == "live":
                     self.set_mode("stop")
             keyboard.Listener(on_press=on_press, daemon=True).start()
+            self._has_key_listener = True
         except Exception as e:  # pragma: no cover
             print(f"F12 stop key unavailable: {e}")
 
@@ -215,6 +348,7 @@ class Engine:
                 inp = NullInput()
         t0 = time.perf_counter()
         frame = source.grab()
+        self.last_frame = frame
         now = source.time()
         t1 = time.perf_counter()
         dets = [d for det in detectors for d in det.detect(frame)]
@@ -288,6 +422,75 @@ def create_app(project_path: Path):
             return JSONResponse({"ok": False}, status_code=400)
         return {"ok": True, "mode": engine.mode}
 
+    @app.get("/api/projects")
+    def get_projects():
+        return {"projects": list_projects(engine.project_path, engine.known_paths)}
+
+    @app.post("/api/projects/new")
+    def post_new_project(body: dict = Body(...)):
+        name = (body.get("name") or "").strip() or "新しいプロジェクト"
+        PROJECTS.mkdir(exist_ok=True)
+        stem, n = safe_project_name(name), 1
+        path = PROJECTS / f"{stem}.json"
+        while path.exists():
+            n += 1
+            path = PROJECTS / f"{stem}_{n}.json"
+        path.write_text(json.dumps(new_project(name), ensure_ascii=False, indent=2), encoding="utf-8")
+        engine.switch_project(path)
+        return {"ok": True}
+
+    @app.post("/api/projects/open")
+    def post_open_project(body: dict = Body(...)):
+        wanted = {p["file"] for p in list_projects(engine.project_path, engine.known_paths)}
+        file = body.get("file")
+        if file not in wanted:
+            return JSONResponse({"ok": False, "error": "そのプロジェクトは見つかりません"}, status_code=404)
+        engine.switch_project(Path(file))
+        return {"ok": True}
+
+    @app.put("/api/project/name")
+    def put_project_name(body: dict = Body(...)):
+        name = (body.get("name") or "").strip()
+        if name:
+            with engine.lock:
+                engine.project["name"] = name
+            engine.save()
+        return {"ok": True}
+
+    @app.post("/api/record/start")
+    def post_record_start():
+        try:
+            engine.start_recording()
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": f"記録を始められません: {e}"}, status_code=400)
+        return {"ok": True}
+
+    @app.post("/api/record/stop")
+    def post_record_stop():
+        return {"ok": True, "steps": engine.stop_recording()}
+
+    @app.post("/api/templates")
+    def post_template(body: dict = Body(...)):
+        label = (body.get("label") or "").strip()
+        if not label:
+            return JSONResponse({"ok": False, "error": "名前を入れてください"}, status_code=400)
+        try:
+            settings = engine.add_template(label, body.get("x", 0), body.get("y", 0),
+                                           body.get("w", 0), body.get("h", 0),
+                                           float(body.get("threshold", 0.8)))
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+        return {"ok": True, "settings": settings}
+
+    @app.get("/api/templates/image")
+    def get_template_image(label: str):
+        for im in engine.project.get("settings", {}).get("detector", {}).get("images", []):
+            if im.get("label") == label:
+                path = (engine.project_path.parent / im["image"]).resolve()
+                if path.is_file() and engine.project_path.parent.resolve() in path.parents:
+                    return FileResponse(path)
+        return JSONResponse({"ok": False}, status_code=404)
+
     @app.get("/api/windows")
     def get_windows():
         return {"windows": list_windows()}
@@ -304,6 +507,7 @@ def create_app(project_path: Path):
                     await sock.send_text(pkt[1])
                 else:
                     await sock.send_text(json.dumps({"type": "status", "mode": engine.mode,
+                                                     "recording": engine.recorder is not None,
                                                      "status": engine.status, "error": engine.error}))
                     await asyncio.sleep(0.25)
                     continue
@@ -317,7 +521,7 @@ def create_app(project_path: Path):
     return app
 
 
-def serve(project: str | None, host: str, port: int):
+def serve(project: str | None, host: str, port: int, open_browser: bool = True):
     import os
 
     import uvicorn
@@ -332,5 +536,19 @@ def serve(project: str | None, host: str, port: int):
         print(f"created a new project: {path}")
     if not DIST.exists():
         print("note: web UI not built yet -> cd webui && npm install && npm run build")
-    print(f"SightFlow: http://{host}:{port}   project: {path}")
+    url = f"http://{host}:{port}"
+    import socket
+
+    with socket.socket() as probe:
+        if probe.connect_ex((host, port)) == 0:   # already running (e.g. double-clicked twice)
+            print(f"SightFlow is already running: {url}")
+            if open_browser:
+                import webbrowser
+                webbrowser.open(url)
+            return
+    print(f"SightFlow: {url}   project: {path}")
+    if open_browser:
+        import webbrowser
+
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     uvicorn.run(create_app(path), host=host, port=port, log_level="warning")

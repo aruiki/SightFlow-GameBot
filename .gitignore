@@ -7,3 +7,4 @@ models/
 webui/node_modules/
 webui/dist/
 .claude/
+projects/
