@@ -139,7 +139,8 @@ export default function SettingsPanel({ settings, labels, onApply, status, error
           {[
             ['yolo_world', 'YOLO-World（言葉で指定）'],
             ['yolo', '学習済みYOLO'],
-            ['color', '色（デモ用）'],
+            ['color', '色'],
+            ['none', '画像だけ'],
           ].map(([k, t]) => (
             <button key={k} className={det.type === k ? 'on' : ''} onClick={() => { set('detector.type', k); if (k === 'color' && !det.color?.length) set('detector.color', [{ type: 'color', label: 'player', hsv: [[100, 150, 150], [118, 255, 255]], min_area: 150 }]) }}>{t}</button>
           ))}
@@ -159,7 +160,7 @@ export default function SettingsPanel({ settings, labels, onApply, status, error
               onChange={(e) => set('detector.model', e.target.value)} />
           </div>
         )}
-        {det.type !== 'color' && (
+        {det.type !== 'color' && det.type !== 'none' && (
           <>
             <table className="classes">
               <thead>
@@ -211,6 +212,25 @@ export default function SettingsPanel({ settings, labels, onApply, status, error
                 onPickFromLive()
               }} />
           </>
+        )}
+      </section>
+
+      <section>
+        <h3>切り取った画像</h3>
+        {(det.images || []).length === 0 ? (
+          <p className="hint">ライブ画面の「✂ 画像を切り取って探す」で、ボタンやアイコンを登録できます。学習なしで、同じ見た目のものを画面から探します。</p>
+        ) : (
+          (det.images || []).map((im, i) => (
+            <div className="row img-rule" key={im.label}>
+              <img src={`/api/templates/image?label=${encodeURIComponent(im.label)}&v=${encodeURIComponent(im.image)}`} alt="" />
+              <b>{im.label}</b>
+              <span className="lbl">一致度</span>
+              <input type="range" min="0.5" max="0.98" step="0.02" value={im.threshold ?? 0.8}
+                onChange={(e) => set(`detector.images.${i}.threshold`, Number(e.target.value))} />
+              <b>{Math.round((im.threshold ?? 0.8) * 100)}%</b>
+              <button className="ghost" onClick={() => set('detector.images', det.images.filter((_, j) => j !== i))}>✕</button>
+            </div>
+          ))
         )}
       </section>
 

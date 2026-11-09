@@ -18,7 +18,11 @@ function arrow(ctx, x1, y1, x2, y2, color, width = 3) {
   ctx.fill()
 }
 
-export default function LivePanel({ highlightLabel, onPick }) {
+export default function LivePanel({ highlightLabel, onPick, onCrop }) {
+  const [cropMode, setCropMode] = useState(false)
+  const [drag, setDrag] = useState(null)     // {x0, y0, x1, y1} in frame px while dragging
+  const [pending, setPending] = useState(null) // finished rectangle waiting for a name
+  const [cropName, setCropName] = useState('')
   const live = useLive()
   const canvasRef = useRef(null)
   const imgRef = useRef(new Image())
@@ -94,14 +98,36 @@ export default function LivePanel({ highlightLabel, onPick }) {
   const t = live?.timing
   return (
     <div className="live">
+      <div className="live-tools">
+        <button className={`ghost ${cropMode ? 'tog' : ''}`} disabled={!live?.image}
+          title="ライブ画面をドラッグして、探したいもの（ボタン・アイコンなど）を切り取る"
+          onClick={() => { setCropMode((v) => !v); setPending(null) }}>
+          ✂ {cropMode ? 'ドラッグで範囲を選んでください' : '画像を切り取って探す'}
+        </button>
+      </div>
       <div className="live-canvas">
         {live?.image ? (
           <canvas
             ref={canvasRef}
-            onMouseMove={(e) => setHover(hit(e))}
+            onMouseDown={(e) => {
+              if (!cropMode) return
+              const [x, y] = toFrame(e)
+              setDrag({ x0: x, y0: y, x1: x, y1: y })
+            }}
+            onMouseUp={() => {
+              if (!cropMode || !drag) return
+              const r = { x: Math.min(drag.x0, drag.x1), y: Math.min(drag.y0, drag.y1), w: Math.abs(drag.x1 - drag.x0), h: Math.abs(drag.y1 - drag.y0) }
+              setDrag(null)
+              if (r.w > 4 && r.h > 4) { setPending(r); setCropName('') }
+            }}
+            onMouseMove={(e) => {
+              if (cropMode && drag) { const [x, y] = toFrame(e); setDrag((d) => ({ ...d, x1: x, y1: y })) }
+              else setHover(cropMode ? null : hit(e))
+            }}
             onMouseLeave={() => setHover(null)}
-            style={eyedropper.cb ? { cursor: 'copy' } : undefined}
+            style={eyedropper.cb ? { cursor: 'copy' } : cropMode ? { cursor: 'crosshair' } : undefined}
             onClick={(e) => {
+              if (cropMode) return
               const [x, y] = toFrame(e)
               if (eyedropper.cb) {   // pick a colour from the raw frame (without the overlay)
                 const img = imgRef.current
@@ -124,6 +150,23 @@ export default function LivePanel({ highlightLabel, onPick }) {
             <div className="big">▶</div>
             上の「見るだけ」を押すと、ここに画面と検出結果が出ます
           </div>
+        )}
+        {live?.image && (drag || pending) && (() => {
+          const r = pending || { x: Math.min(drag.x0, drag.x1), y: Math.min(drag.y0, drag.y1), w: Math.abs(drag.x1 - drag.x0), h: Math.abs(drag.y1 - drag.y0) }
+          return <div className="crop-rect" style={{ left: `${(r.x / live.w) * 100}%`, top: `${(r.y / live.h) * 100}%`, width: `${(r.w / live.w) * 100}%`, height: `${(r.h / live.h) * 100}%` }} />
+        })()}
+        {pending && (
+          <form className="crop-form" onSubmit={(e) => {
+            e.preventDefault()
+            if (!cropName.trim()) return
+            onCrop?.({ label: cropName.trim(), x: Math.round(pending.x), y: Math.round(pending.y), w: Math.round(pending.w), h: Math.round(pending.h) })
+            setPending(null)
+            setCropMode(false)
+          }}>
+            <input autoFocus placeholder="名前（例: startボタン）" value={cropName} onChange={(e) => setCropName(e.target.value)} />
+            <button className="primary sm" type="submit">登録</button>
+            <button className="ghost" type="button" onClick={() => setPending(null)}>やり直す</button>
+          </form>
         )}
         {hover && (
           <div className="hover-card">

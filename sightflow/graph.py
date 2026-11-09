@@ -420,6 +420,46 @@ def _key(ctx, i, p, s):
     return {}, f"押す {p['key']}"
 
 
+@node("macro", "act", "記録した操作", "「● 記録」で録ったクリックやキーを順番に再生（FRep 風マクロ）。実行が はい になると最初から再生",
+      inputs=[("run", "bool")],
+      props=[P("steps", "steps", [], "操作"),
+             P("repeat", "select", "1回", "繰り返し", options=["1回", "ずっと"])])
+def _macro(ctx, i, p, s):
+    steps = [st for st in (p.get("steps") or []) if isinstance(st, dict)]
+    run = _run(i)
+    if not steps:
+        return {}, "待機"
+    if not run:                      # turning `run` off stops playback
+        s["playing"] = False
+        s["was_run"] = False
+        return {}, "待機"
+    if not s.get("playing"):
+        # start on a rising edge of `run`; "ずっと" restarts as long as run stays true
+        if s.get("was_run") and p.get("repeat") != "ずっと":
+            return {}, "待機（再生済み）"
+        s.update(playing=True, idx=0, t_next=ctx.now + _num(steps[0].get("wait")))
+    s["was_run"] = True
+    fired = []
+    while s["playing"] and ctx.now >= s["t_next"]:
+        st = steps[s["idx"]]
+        if st.get("kind") == "key" and st.get("key"):
+            ctx.intents.taps.append(str(st["key"]))
+            fired.append(str(st["key"]))
+        elif st.get("kind") == "click":
+            ctx.intents.clicks.append(ctx.point(_num(st.get("x"), 0.5), _num(st.get("y"), 0.5)))
+            fired.append("クリック")
+        s["idx"] += 1
+        if s["idx"] >= len(steps):
+            s["playing"] = False
+            break
+        s["t_next"] += _num(steps[s["idx"]].get("wait"))
+    if fired:
+        return {}, f"{s['idx']}/{len(steps)} {' '.join(fired)}"
+    if s["playing"]:
+        return {}, f"再生中 {s['idx']}/{len(steps)}"
+    return {}, "待機"
+
+
 def _desc(d):
     if not isinstance(d, Detection) or not d.exists:
         return "なし"
@@ -490,7 +530,7 @@ class Graph:
             try:
                 out, text = n["type"].fn(ctx, ins, n["props"], self.state[nid])
                 outputs[nid] = out
-                active = n["type"].category == "act" and text not in ("待機", "到着")
+                active = n["type"].category == "act" and text != "到着" and not text.startswith("待機")
                 status[nid] = {"text": text, "active": active, "error": None}
             except Exception as e:  # one bad node must not stop the bot
                 outputs[nid] = {}

@@ -187,8 +187,11 @@ function Editor() {
   const [showSide, setShowSide] = useState(true)
   const [quick, setQuick] = useState(null)   // {x, y} screen position of the add-node popup
   const [ctx, setCtx] = useState(null)       // {x, y, items}
+  const [recording, setRecording] = useState(false)
+  const finishing = useRef(false)
   const loaded = useRef(false)
   const { screenToFlowPosition, getNodes } = useReactFlow()
+  const flash = useCallback((msg, ms = 2200) => { setToast(msg); setTimeout(() => setToast(null), ms) }, [])
   const nodeTypes = useMemo(() => nodeTypesFor(meta.defs), [meta.defs])
 
   const refreshState = useCallback(async () => {
@@ -228,6 +231,10 @@ function Editor() {
           return { status: msg.status, error: msg.error }
         })
         setMode(msg.mode)
+        setRecording((was) => {
+          if (was && msg.recording === false) window.dispatchEvent(new Event('sightflow-record-ended'))
+          return !!msg.recording
+        })
       } else if (msg.mode) setMode(msg.mode)
     })
   }, [refreshState, loadProject])
@@ -376,6 +383,54 @@ function Editor() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // ---------------------------------------------------------- FRep-style record
+  const centerPos = () => {
+    const r = document.querySelector('.canvas').getBoundingClientRect()
+    return screenToFlowPosition({ x: r.left + r.width / 2 - 140, y: r.top + r.height / 2 - 120 })
+  }
+  const finishRecording = useCallback(async () => {
+    if (finishing.current) return
+    finishing.current = true
+    try {
+      const r = await api.post('/api/record/stop', {})
+      setRecording(false)
+      const steps = r.steps || []
+      if (!steps.length) {
+        flash('操作が記録されませんでした（ゲーム画面の中をクリック・キー入力してください）', 3500)
+        return
+      }
+      setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })),
+        { id: newId('macro'), type: 'macro', position: centerPos(), data: { steps, repeat: '1回' }, selected: true }])
+      flash(`${steps.length}個の操作を記録して「記録した操作」ノードにしました`, 3500)
+    } finally {
+      finishing.current = false
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flash, setNodes])
+  useEffect(() => {
+    const h = () => finishRecording()
+    window.addEventListener('sightflow-record-ended', h)
+    return () => window.removeEventListener('sightflow-record-ended', h)
+  }, [finishRecording])
+  const startRecording = async () => {
+    const r = await api.post('/api/record/start', {})
+    if (!r.ok) return flash(r.error || '記録を始められませんでした', 4000)
+    setRecording(true)
+    setMode('stop')
+    flash('記録中です。ゲーム画面で操作して、終わったら F12 か「■ 記録終了」を押してください', 4000)
+  }
+
+  // ---------------------------------------------------------- cut-out image -> detector
+  const cropImage = async (body) => {
+    const r = await api.post('/api/templates', body)
+    if (!r.ok) return flash(r.error || '登録できませんでした', 3500)
+    setProject((p) => ({ ...p, settings: r.settings }))
+    setSrvStatus({ status: 'loading', error: null })
+    setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })),
+      { id: newId('objects'), type: 'objects', position: centerPos(), data: { label: body.label }, selected: true }])
+    flash(`「${body.label}」を登録しました。画面に出ると「物体」ノードで見つかります`, 3500)
+  }
+
   const renameProject = async (name, commit) => {
     setProject((p) => ({ ...p, name }))
     if (commit && name.trim()) await api.put('/api/project/name', { name })
@@ -402,8 +457,13 @@ function Editor() {
         <div className="modes">
           <button className={mode === 'stop' ? 'on stop' : ''} onClick={() => changeMode('stop')}>■ 停止</button>
           <button className={mode === 'watch' ? 'on watch' : ''} onClick={() => changeMode('watch')}>👁 見るだけ</button>
-          <button className={mode === 'live' ? 'on live' : ''} onClick={() => changeMode('live')}>● 操作する</button>
+          <button className={mode === 'live' ? 'on live' : ''} onClick={() => changeMode('live')}>▶ 操作する</button>
         </div>
+        {recording ? (
+          <button className="rec on" onClick={finishRecording}>■ 記録終了 <small>F12</small></button>
+        ) : (
+          <button className="rec" onClick={startRecording} title="自分のクリックやキー入力を録って、再生できるノードにします">● 記録</button>
+        )}
         <div className="right">
           <span className={`pill ${srvStatus.status}`}>
             {{ idle: '待機', loading: '読み込み中', running: '準備OK', error: 'エラー' }[srvStatus.status]}
@@ -451,7 +511,7 @@ function Editor() {
           </div>
           <div className="side-body">
             {tab === 'live' ? (
-              <LivePanel highlightLabel={highlightLabel} onPick={onPick} />
+              <LivePanel highlightLabel={highlightLabel} onPick={onPick} onCrop={cropImage} />
             ) : (
               <SettingsPanel settings={project?.settings} labels={meta.labels} onApply={applySettings}
                 status={srvStatus.status} error={srvStatus.error}

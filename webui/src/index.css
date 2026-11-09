@@ -203,3 +203,35 @@ main.with-pal.with-side { grid-template-columns: 220px minmax(0, 1fr) clamp(330p
 .win-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .chip { background: #1a1a1e; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip.on, .chip:hover { color: var(--text); border-color: var(--accent); }
+
+/* ---------------------------------------------------------------- record & replay */
+.rec { background: #2a2a30; border: 1px solid var(--line); border-radius: 9px; padding: 6px 14px; font-weight: 700; color: #ff8da1; }
+.rec:hover { border-color: var(--live); }
+.rec.on { background: var(--live); color: white; border-color: var(--live); animation: pulse 1.4s infinite; }
+.rec small { opacity: .75; font-weight: 500; margin-left: 4px; }
+.fn-props label.wide { display: block; }
+.fn-props label.wide > span { display: block; margin-bottom: 4px; }
+.steps { display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; min-width: 300px; }
+.steps-empty { color: var(--muted); font-size: 11px; padding: 4px 0; }
+.step { display: flex; align-items: center; gap: 4px; }
+.step-n { color: var(--muted); width: 16px; text-align: right; font-size: 10px; }
+.step .prop-input { padding: 2px 4px; }
+.step .w { width: 46px; }
+.step .k { width: 72px; }
+.step .v { width: 108px; }
+.step .xy { width: 52px; }
+.step-s { color: var(--muted); font-size: 10px; }
+.step-del { background: transparent; border: 0; color: var(--muted); padding: 0 4px; }
+.step-del:hover { color: #ff8da1; }
+.step-add { display: flex; gap: 4px; margin-top: 3px; }
+.step-add button { flex: 1; background: #1a1a1e; border: 1px dashed var(--line); border-radius: 6px; padding: 3px; color: var(--muted); font-size: 11px; }
+.step-add button:hover { color: var(--text); border-color: var(--accent); }
+
+/* ---------------------------------------------------------------- cut-out images */
+.live-tools { display: flex; gap: 6px; margin-bottom: 8px; }
+.live-tools button:disabled { opacity: .45; cursor: default; }
+.crop-rect { position: absolute; border: 2px dashed #ffd84a; background: #ffd84a22; pointer-events: none; }
+.crop-form { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; gap: 6px; background: #1b1b1fee; border: 1px solid var(--line); border-radius: 9px; padding: 6px; }
+.crop-form input { flex: 1; background: #111; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 0; }
+.img-rule img { width: 34px; height: 34px; object-fit: contain; background: #111; border-radius: 6px; border: 1px solid var(--line); }
+.img-rule input[type=range] { flex: 1; }
