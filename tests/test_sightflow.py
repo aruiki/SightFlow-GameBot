@@ -80,6 +80,21 @@ def test_template_detector(tmp_path):
     assert sorted(round(d.x / 10) for d in dets) == [15, 25]
 
 
+def test_template_detector_japanese_path(tmp_path):
+    # Windows: cv2.imread/imwrite fail on paths like ...\ドキュメント\...
+    from sightflow.imageio import imread, imwrite
+
+    img = _scene()
+    folder = tmp_path / "ドキュメント"
+    folder.mkdir()
+    assert imwrite(folder / "敵.png", img[86:115, 136:165])
+    assert imread(folder / "敵.png").shape == (29, 29, 3)
+    assert imread(folder / "ない.png") is None
+    spec = {"type": "template", "label": "enemy", "image": "敵.png", "threshold": 0.9}
+    dets = build_detectors([spec], folder)[0].detect(img)
+    assert sorted(round(d.x / 10) for d in dets) == [15, 25]
+
+
 # ------------------------------------------------------------------ flow
 def _groups(enemy_dist=None):
     me = Detection("player", 0, 0, 10, 10)
