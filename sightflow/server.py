@@ -37,6 +37,7 @@ from .tracking import CentroidTracker
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "webui" / "dist"
 DEFAULT_PROJECT = ROOT / "demo" / "arena_project.json"
+PROJECTS = ROOT / "projects"
 
 
 def detector_specs(det: dict) -> list[dict]:
@@ -72,6 +73,29 @@ def new_project(name: str) -> dict:
     }
 
 
+def safe_project_name(name: str) -> str:
+    """A file-name-safe stem from whatever the user typed (Japanese is fine)."""
+    stem = "".join(c if (c.isalnum() or c in "-_ ") else "_" for c in (name or "").strip())
+    return stem.strip(" .")[:60] or "project"
+
+
+def list_projects(current: Path, known: set[Path] = frozenset()) -> list[dict]:
+    """Projects in projects/, the demo, the current file, and any opened this session."""
+    files = {p.resolve() for p in PROJECTS.glob("*.json")} if PROJECTS.exists() else set()
+    files |= {p.resolve() for p in known}
+    files.add(current.resolve())
+    if DEFAULT_PROJECT.exists():
+        files.add(DEFAULT_PROJECT.resolve())
+    out = []
+    for p in sorted(files, key=lambda x: x.name.lower()):
+        try:
+            name = json.loads(p.read_text(encoding="utf-8")).get("name") or p.stem
+        except Exception:
+            continue
+        out.append({"file": str(p), "name": name, "current": p == current.resolve()})
+    return out
+
+
 def _labels_of(d) -> list[str]:
     if hasattr(d, "labels"):
         return list(d.labels)
@@ -83,6 +107,7 @@ def _labels_of(d) -> list[str]:
 class Engine:
     def __init__(self, project_path: Path):
         self.project_path = project_path
+        self.known_paths: set[Path] = {project_path}
         self.project = json.loads(project_path.read_text(encoding="utf-8"))
         self.lock = threading.RLock()
         self.mode = "stop"
@@ -108,6 +133,20 @@ class Engine:
     def save(self):
         self.project_path.write_text(json.dumps(self.project, ensure_ascii=False, indent=2),
                                      encoding="utf-8")
+
+    def switch_project(self, path: Path):
+        """Open another project file (mode goes back to stop)."""
+        project = json.loads(path.read_text(encoding="utf-8"))
+        with self.lock:
+            self.mode = "stop"
+            if self._live_input:
+                self._live_input.set_move(None)
+            self.project_path = path
+            self.known_paths.add(path)
+            self.project = project
+            self.graph = None
+        self.set_graph(project.get("graph", {"nodes": [], "edges": []}), save=False)
+        threading.Thread(target=self._load_settings, daemon=True).start()
 
     def state(self) -> dict:
         return {"project": self.project, "mode": self.mode, "status": self.status,
@@ -287,6 +326,41 @@ def create_app(project_path: Path):
         except ValueError:
             return JSONResponse({"ok": False}, status_code=400)
         return {"ok": True, "mode": engine.mode}
+
+    @app.get("/api/projects")
+    def get_projects():
+        return {"projects": list_projects(engine.project_path, engine.known_paths)}
+
+    @app.post("/api/projects/new")
+    def post_new_project(body: dict = Body(...)):
+        name = (body.get("name") or "").strip() or "新しいプロジェクト"
+        PROJECTS.mkdir(exist_ok=True)
+        stem, n = safe_project_name(name), 1
+        path = PROJECTS / f"{stem}.json"
+        while path.exists():
+            n += 1
+            path = PROJECTS / f"{stem}_{n}.json"
+        path.write_text(json.dumps(new_project(name), ensure_ascii=False, indent=2), encoding="utf-8")
+        engine.switch_project(path)
+        return {"ok": True}
+
+    @app.post("/api/projects/open")
+    def post_open_project(body: dict = Body(...)):
+        wanted = {p["file"] for p in list_projects(engine.project_path, engine.known_paths)}
+        file = body.get("file")
+        if file not in wanted:
+            return JSONResponse({"ok": False, "error": "そのプロジェクトは見つかりません"}, status_code=404)
+        engine.switch_project(Path(file))
+        return {"ok": True}
+
+    @app.put("/api/project/name")
+    def put_project_name(body: dict = Body(...)):
+        name = (body.get("name") or "").strip()
+        if name:
+            with engine.lock:
+                engine.project["name"] = name
+            engine.save()
+        return {"ok": True}
 
     @app.get("/api/windows")
     def get_windows():
