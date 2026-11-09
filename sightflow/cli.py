@@ -86,7 +86,7 @@ def cmd_nodes_doc(a):
 def cmd_web(a):
     from .server import serve
 
-    serve(a.project, a.host, a.port)
+    serve(a.project, a.host, a.port, open_browser=not a.no_browser)
 
 
 def main(argv=None):
@@ -115,6 +115,7 @@ def main(argv=None):
     w.add_argument("project", nargs="?")
     w.add_argument("--host", default="127.0.0.1")
     w.add_argument("--port", type=int, default=8765)
+    w.add_argument("--no-browser", action="store_true", help="do not open the browser automatically")
     w.set_defaults(fn=cmd_web)
     nd = sub.add_parser("nodes-doc", help="print the node reference (markdown)")
     nd.set_defaults(fn=cmd_nodes_doc)

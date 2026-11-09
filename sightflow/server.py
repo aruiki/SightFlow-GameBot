@@ -111,6 +111,24 @@ def list_projects(current: Path, known: set[Path] = frozenset()) -> list[dict]:
     return out
 
 
+def friendly_error(e: Exception) -> str:
+    """Turn the common setup errors into a Japanese message that says what to do."""
+    msg = str(e)
+    if "ultralytics" in msg:
+        return ("YOLO の部品が入っていません。コマンドで `pip install ultralytics` を実行するか、"
+                "検出器を「色」か「画像だけ」にしてください")
+    if "no visible window" in msg:
+        return ("指定した名前のウィンドウが見つかりません。ゲームを起動してから、"
+                "設定の「ウィンドウ」で一覧から選び直してください")
+    if "Windows-only" in msg:
+        return "ウィンドウの取り込みは Windows 専用です。設定で「画面の範囲」を選んでください"
+    if isinstance(e, FileNotFoundError):
+        return f"ファイルが見つかりません: {msg}"
+    if "cannot read video" in msg:
+        return "動画を読み込めませんでした。ファイルの場所と形式（.mp4 など）を確認してください"
+    return f"{type(e).__name__}: {msg}"
+
+
 def _labels_of(d) -> list[str]:
     if hasattr(d, "labels"):
         return list(d.labels)
@@ -283,7 +301,7 @@ class Engine:
             self.status = "running"
         except Exception as e:
             traceback.print_exc()
-            self.status, self.error = "error", f"{type(e).__name__}: {e}"
+            self.status, self.error = "error", friendly_error(e)
 
     def _start_stop_key(self):
         try:
@@ -503,7 +521,7 @@ def create_app(project_path: Path):
     return app
 
 
-def serve(project: str | None, host: str, port: int):
+def serve(project: str | None, host: str, port: int, open_browser: bool = True):
     import os
 
     import uvicorn
@@ -518,5 +536,19 @@ def serve(project: str | None, host: str, port: int):
         print(f"created a new project: {path}")
     if not DIST.exists():
         print("note: web UI not built yet -> cd webui && npm install && npm run build")
-    print(f"SightFlow: http://{host}:{port}   project: {path}")
+    url = f"http://{host}:{port}"
+    import socket
+
+    with socket.socket() as probe:
+        if probe.connect_ex((host, port)) == 0:   # already running (e.g. double-clicked twice)
+            print(f"SightFlow is already running: {url}")
+            if open_browser:
+                import webbrowser
+                webbrowser.open(url)
+            return
+    print(f"SightFlow: {url}   project: {path}")
+    if open_browser:
+        import webbrowser
+
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     uvicorn.run(create_app(path), host=host, port=port, log_level="warning")

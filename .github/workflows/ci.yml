@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      SDL_VIDEODRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Python parts (without the heavy YOLO/PyTorch stack)
+        run: pip install numpy opencv-python-headless pyyaml mss pynput fastapi "uvicorn[standard]" httpx pygame pytest
+      - name: Python tests
+        run: python -m pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      - name: Build and lint the web UI
+        working-directory: webui
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webui-dist
+          path: webui/dist
+
+  package:
+    # A ready-to-run Windows zip (source + built UI + SightFlow.bat).
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: webui-dist
+          path: webui/dist
+      - name: Make the zip
+        run: |
+          name="SightFlow-${GITHUB_REF_NAME//\//-}-windows"
+          mkdir -p "out/$name"
+          git archive HEAD | tar -x -C "out/$name"
+          cp -r webui/dist "out/$name/webui/dist"
+          (cd out && zip -qr "$name.zip" "$name")
+          echo "ZIP=out/$name.zip" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sightflow-windows
+          path: ${{ env.ZIP }}
+      - name: Attach to the GitHub release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP }}

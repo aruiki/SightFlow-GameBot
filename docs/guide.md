@@ -15,6 +15,10 @@
 
 ## 1. 準備と起動
 
+> **いちばん簡単な方法:** [Releases](https://github.com/aruiki/SightFlow-GameBot/releases) の `SightFlow-…-windows.zip` を展開して、
+> `SightFlow.bat` をダブルクリックするだけです（Python 3.10 以上が必要）。初回は数分かけて準備し、ブラウザが自動で開きます。
+> 以下は、ソースから手動で準備する方法です。
+
 必要なもの:
 
 - Windows 10/11（ウィンドウの取り込みとキー操作は Windows 向けに作っています）
@@ -50,7 +54,7 @@ C:\Users\<you>\.venvs\sightflow\Scripts\activate
 python -m sightflow web
 ```
 
-ブラウザで **http://127.0.0.1:8765** を開きます。最初は付属のデモ（`demo/arena_project.json`）が開きます。
+ブラウザが自動で開きます（開かないときは **http://127.0.0.1:8765**）。最初は付属のデモ（`demo/arena_project.json`）が開きます。
 
 自分用のプロジェクトを新しく作るときは、ファイル名を付けて起動します。ファイルがなければ空のプロジェクトが作られます。
 

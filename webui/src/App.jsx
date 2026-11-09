@@ -172,6 +172,45 @@ function ProjectMenu({ project, onSwitch, onRename, onExport, onImport }) {
   )
 }
 
+function Modal({ title, children, actions, onClose }) {
+  return (
+    <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
+      <div className="modal">
+        <h2>{title}</h2>
+        <div className="modal-body">{children}</div>
+        <div className="modal-actions">{actions}</div>
+      </div>
+    </div>
+  )
+}
+
+const WELCOME_KEY = 'sightflow-welcome-v1'
+function seenWelcome() {
+  try { return localStorage.getItem(WELCOME_KEY) === '1' } catch { return false }
+}
+function markWelcome() {
+  try { localStorage.setItem(WELCOME_KEY, '1') } catch { /* private window */ }
+}
+
+function Welcome({ onDemo, onNew }) {
+  const [name, setName] = useState('')
+  return (
+    <Modal title="SightFlow へようこそ" onClose={onDemo} actions={<>
+      <button className="ghost" onClick={onDemo}>まずデモを見る</button>
+      <input className="welcome-name" placeholder="ゲーム名（例: マイゲーム）" value={name} onChange={(e) => setName(e.target.value)} />
+      <button className="primary" onClick={() => onNew(name.trim() || 'マイゲーム')}>自分のゲームで始める</button>
+    </>}>
+      <p>コードを書かずに、ゲームを自動で操作するボットを作れます。</p>
+      <ol className="welcome-steps">
+        <li><b>取り込み元を選ぶ</b><span>右の「設定」でゲームのウィンドウを選び、「設定を適用」</span></li>
+        <li><b>見るだけ</b><span>上の「👁 見るだけ」で、ライブ画面に検出結果が出ます（まだ操作はしません）</span></li>
+        <li><b>作る</b><span>「● 記録」で自分の操作を録る／「✂ 画像を切り取って探す」で目印を登録／キャンバスをダブルクリックしてノードを追加</span></li>
+        <li><b>操作する</b><span>「▶ 操作する」で実際に動かします。止めるときは <kbd>F12</kbd></span></li>
+      </ol>
+    </Modal>
+  )
+}
+
 function Editor() {
   const meta = useMeta()
   const [project, setProject] = useState(null)
@@ -188,6 +227,9 @@ function Editor() {
   const [quick, setQuick] = useState(null)   // {x, y} screen position of the add-node popup
   const [ctx, setCtx] = useState(null)       // {x, y, items}
   const [recording, setRecording] = useState(false)
+  const [askLive, setAskLive] = useState(false)
+  const [welcome, setWelcome] = useState(() => !seenWelcome())
+  const hist = useRef({ stack: [], idx: -1, skip: false })
   const finishing = useRef(false)
   const loaded = useRef(false)
   const { screenToFlowPosition, getNodes } = useReactFlow()
@@ -209,6 +251,7 @@ function Editor() {
     setGraphError(st.graph_error)
     setNodes(st.project.graph.nodes || [])
     setEdges(st.project.graph.edges || [])
+    hist.current = { stack: [JSON.stringify(st.project.graph)], idx: 0, skip: false }
     setSaved(true)
     setTimeout(() => (loaded.current = true), 80)
   }, [refreshState, setEdges, setNodes])
@@ -248,6 +291,13 @@ function Editor() {
         nodes: nodes.map(({ id, type, position, data }) => ({ id, type, position, data })),
         edges: edges.map(({ id, source, sourceHandle, target, targetHandle }) => ({ id, source, sourceHandle, target, targetHandle })),
       }
+      const h = hist.current
+      const snap = JSON.stringify(graph)
+      if (!h.skip && snap !== h.stack[h.idx]) {
+        h.stack = [...h.stack.slice(Math.max(0, h.idx - 99), h.idx + 1), snap]
+        h.idx = h.stack.length - 1
+      }
+      h.skip = false
       const r = await api.put('/api/graph', graph)
       setGraphError(r.error)
       setSaved(true)
@@ -301,12 +351,11 @@ function Editor() {
   }
 
   const changeMode = async (m) => {
-    if (m === 'live' && project?.settings?.source?.type !== 'demo') {
-      const ok = window.confirm(
-        '実際にキーボードとマウスを操作します。\n停止するときは F12 キー、またはこの画面の「停止」を押してください。\n\n開始しますか？',
-      )
-      if (!ok) return
+    if (m === 'live' && project?.settings?.source?.type !== 'demo' && !askLive) {
+      setAskLive(true)
+      return
     }
+    setAskLive(false)
     await api.post('/api/mode', { mode: m })
     setMode(m)
   }
@@ -360,6 +409,8 @@ function Editor() {
     setCtx({ x: e.clientX, y: e.clientY, items: [
       { label: '＋ ノードを追加…', run: () => setQuick({ x: e.clientX, y: e.clientY }) },
       { label: '▭ ノード一覧を開く', run: () => setShowPal(true) },
+      { label: '↶ 元に戻す (Ctrl+Z)', run: undo },
+      { label: '↷ やり直す (Ctrl+Y)', run: redo },
     ] })
   }
   const onNodeContextMenu = (e, node) => {
@@ -373,15 +424,31 @@ function Editor() {
   const onCanvasDoubleClick = (e) => {
     if (e.target.classList?.contains('react-flow__pane')) setQuick({ x: e.clientX, y: e.clientY })
   }
-  // Space/“/” opens the search too
+  const travel = useCallback((d) => {
+    const h = hist.current
+    const to = h.idx + d
+    if (to < 0 || to >= h.stack.length) return
+    h.idx = to
+    h.skip = true
+    const g = JSON.parse(h.stack[to])
+    setNodes(g.nodes || [])
+    setEdges(g.edges || [])
+  }, [setNodes, setEdges])
+  const undo = useCallback(() => travel(-1), [travel])
+  const redo = useCallback(() => travel(1), [travel])
+
+  // “/” opens the search; Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) undo and redo
   useEffect(() => {
     const onKey = (e) => {
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return
+      const mod = e.ctrlKey || e.metaKey
+      if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); return e.shiftKey ? redo() : undo() }
+      if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); return redo() }
       if (e.key === '/' ) { e.preventDefault(); setQuick({ x: window.innerWidth / 2 - 160, y: window.innerHeight / 3 }) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [undo, redo])
 
   // ---------------------------------------------------------- FRep-style record
   const centerPos = () => {
@@ -469,6 +536,9 @@ function Editor() {
             {{ idle: '待機', loading: '読み込み中', running: '準備OK', error: 'エラー' }[srvStatus.status]}
           </span>
           <span className={`pill ${saved ? 'ok' : 'saving'}`}>{saved ? '保存済み' : '保存中…'}</span>
+          <button className="ghost icon" onClick={undo} title="元に戻す (Ctrl+Z)">↶</button>
+          <button className="ghost icon" onClick={redo} title="やり直す (Ctrl+Y)">↷</button>
+          <button className="ghost icon" onClick={() => setWelcome(true)} title="はじめかた">?</button>
           <button className={`ghost ${showPal ? 'tog' : ''}`} onClick={() => setShowPal((v) => !v)} title="ノード一覧の表示/非表示">ノード</button>
           <button className={`ghost ${showSide ? 'tog' : ''}`} onClick={() => setShowSide((v) => !v)} title="ライブ画面・設定の表示/非表示">パネル</button>
         </div>
@@ -522,6 +592,29 @@ function Editor() {
       </main>
       {quick && <QuickAdd x={quick.x} y={quick.y} onPick={(t) => addNodeAt(t, quick.x, quick.y)} onClose={() => setQuick(null)} />}
       {ctx && <ContextMenu {...ctx} onClose={() => setCtx(null)} />}
+      {askLive && (
+        <Modal title="実際に操作を始めます" onClose={() => setAskLive(false)} actions={<>
+          <button className="ghost" onClick={() => setAskLive(false)}>やめる</button>
+          <button className="primary danger" onClick={() => changeMode('live')}>▶ 操作を始める</button>
+        </>}>
+          <p>このパソコンのキーボードとマウスを SightFlow が動かします。</p>
+          <p className="big-stop">止めるときは <kbd>F12</kbd></p>
+          <p className="muted">または、この画面の「■ 停止」を押してください。</p>
+        </Modal>
+      )}
+      {welcome && (
+        <Welcome
+          onDemo={() => { markWelcome(); setWelcome(false) }}
+          onNew={async (name) => {
+            markWelcome()
+            setWelcome(false)
+            await api.post('/api/projects/new', { name })
+            await loadProject()
+            setShowSide(true)
+            setTab('settings')
+            flash('まず右の設定で、ゲームのウィンドウを選んでください', 3500)
+          }} />
+      )}
       {toast && <div className="toast">{toast}</div>}
     </div>
   )

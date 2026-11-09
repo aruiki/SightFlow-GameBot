@@ -235,3 +235,20 @@ main.with-pal.with-side { grid-template-columns: 220px minmax(0, 1fr) clamp(330p
 .crop-form input { flex: 1; background: #111; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 0; }
 .img-rule img { width: 34px; height: 34px; object-fit: contain; background: #111; border-radius: 6px; border: 1px solid var(--line); }
 .img-rule input[type=range] { flex: 1; }
+
+/* ---------------------------------------------------------------- modal / welcome */
+.ghost.icon { padding: 5px 9px; min-width: 30px; }
+.modal-back { position: fixed; inset: 0; z-index: 60; background: #000a; display: grid; place-items: center; padding: 16px; }
+.modal { width: min(560px, 100%); background: #26262c; border: 1px solid #50505a; border-radius: 14px; box-shadow: 0 24px 60px #000c; padding: 22px 24px; }
+.modal h2 { margin: 0 0 12px; font-size: 18px; }
+.modal-body { color: #cfcfd8; line-height: 1.7; }
+.modal-body p { margin: 0 0 8px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 18px; flex-wrap: wrap; }
+.primary.danger { background: var(--live); }
+.big-stop { font-size: 20px; font-weight: 800; margin: 14px 0 4px !important; }
+.muted { color: var(--muted); }
+kbd { background: #1a1a1e; border: 1px solid #555; border-bottom-width: 3px; border-radius: 6px; padding: 1px 7px; font-family: inherit; font-weight: 700; }
+.welcome-steps { margin: 12px 0 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; }
+.welcome-steps li b { display: block; color: var(--text); }
+.welcome-steps li span { color: var(--muted); font-size: 12.5px; }
+.welcome-name { flex: 1; min-width: 140px; background: #1a1a1e; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
