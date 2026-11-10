@@ -16,6 +16,7 @@ import cv2
 import numpy as np
 
 from .detection import Detection
+from .imageio import imread
 
 _REGISTRY: dict[str, Callable[[dict, Path], "Detector"]] = {}
 
@@ -123,7 +124,7 @@ class TemplateDetector(Detector):
         super().__init__(spec, base_dir)
         self.label = spec["label"]
         path = (base_dir / spec["image"]).resolve()
-        tpl = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        tpl = imread(path)
         if tpl is None:
             raise FileNotFoundError(path)
         self.tpl = tpl

@@ -15,11 +15,14 @@ from __future__ import annotations
 
 import importlib
 import sys
+import threading
 import time
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+from .imageio import imread
 
 
 # ======================================================================= sources
@@ -38,7 +41,7 @@ class FrameSource:
 
 class ImageSource(FrameSource):
     def __init__(self, path: Path):
-        img = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        img = imread(path)
         if img is None:
             raise FileNotFoundError(path)
         self.img = img
@@ -85,14 +88,30 @@ def _find_window_rect(title: str):
 
 
 class ScreenSource(FrameSource):
-    def __init__(self, region=None, window: str | None = None, monitor: int = 1):
-        import mss
+    """Screen capture via mss. On Windows mss's device contexts belong to the thread
+    that made them (they die with it, and BitBlt / ReleaseDC from any other thread fail
+    with "access denied"), so every thread that grabs gets its own mss instance."""
 
-        self.sct = mss.mss()
+    def __init__(self, region=None, window: str | None = None, monitor: int = 1):
+        self._local = threading.local()
+        self._all = []
+        self._all_lock = threading.Lock()
         self.window = window
         self.monitor = monitor
         self.region = region
         self._resolve()
+
+    @property
+    def sct(self):
+        sct = getattr(self._local, "sct", None)
+        if sct is None:
+            import mss
+
+            sct = getattr(mss, "MSS", mss.mss)()  # mss.mss() is deprecated since mss 10.2
+            self._local.sct = sct
+            with self._all_lock:
+                self._all.append(sct)
+        return sct
 
     def _resolve(self):
         if self.window:
@@ -102,6 +121,8 @@ class ScreenSource(FrameSource):
         else:
             m = self.sct.monitors[self.monitor]
             l, t, w, h = m["left"], m["top"], m["width"], m["height"]
+        if w <= 0 or h <= 0:
+            raise RuntimeError("capture area is empty (is the window minimized?)")
         self.box = {"left": l, "top": t, "width": w, "height": h}
         self.origin = (l, t)
 
@@ -112,7 +133,13 @@ class ScreenSource(FrameSource):
         return cv2.cvtColor(shot, cv2.COLOR_BGRA2BGR)
 
     def close(self):
-        self.sct.close()
+        with self._all_lock:
+            all_, self._all = self._all, []
+        for sct in all_:
+            try:  # instances made on other (maybe finished) threads can fail to close
+                sct.close()
+            except Exception:
+                pass
 
 
 class VideoSource(FrameSource):
@@ -179,7 +206,10 @@ def load_factory(ref: str, base_dir: Path):
 def build_source(spec: dict, base_dir: Path) -> FrameSource:
     kind = spec.get("type", "screen")
     if kind == "window":
-        return ScreenSource(window=spec["title"])
+        title = (spec.get("title") or "").strip()
+        if not title:  # "" would match the first window of all
+            raise RuntimeError("no window title set")
+        return ScreenSource(window=title)
     if kind == "screen":
         return ScreenSource(region=spec.get("region"), monitor=spec.get("monitor", 1))
     if kind == "image":
@@ -221,6 +251,8 @@ class KeyboardMouseInput(InputBackend):
     """Real input via pynput. Movement vectors become held direction keys
     (8-way). Clicks are offset by the source origin so frame coords map to the
     screen."""
+
+    MOVE_SETTLE = 0.03   # seconds between moving the cursor and pressing the button
 
     def __init__(self, source: FrameSource, move_keys: dict | None = None,
                  deadzone: float = 0.35, tap_seconds: float = 0.03):
@@ -274,6 +306,10 @@ class KeyboardMouseInput(InputBackend):
     def click(self, x, y):
         ox, oy = self.source.origin
         self._mouse.position = (int(ox + x), int(oy + y))
+        # Let the game see the move first: many games (SDL, Unity...) take the click
+        # position from the last mouse-move message, so an instant click lands where the
+        # cursor was before.
+        time.sleep(self.MOVE_SETTLE)
         self._mouse.click(self._Button.left)
 
     def drag(self, fx, fy, tx, ty, seconds=0.15):
@@ -282,6 +318,7 @@ class KeyboardMouseInput(InputBackend):
         ox, oy = self.source.origin
         steps = max(4, int(seconds / 0.015))
         self._mouse.position = (int(ox + fx), int(oy + fy))
+        time.sleep(self.MOVE_SETTLE)
         self._mouse.press(self._Button.left)
         try:
             for i in range(1, steps + 1):

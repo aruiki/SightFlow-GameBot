@@ -16,6 +16,7 @@ import cv2
 from . import overlay
 from .bot import Bot, build_groups, declared_labels, load_config
 from .detectors import build_detectors
+from .imageio import imread, imwrite
 
 
 def cmd_run(a):
@@ -24,7 +25,7 @@ def cmd_run(a):
     try:
         bot.run(seconds=a.seconds, overlay=not a.no_overlay)
         if a.snapshot and bot.last_frame is not None:
-            cv2.imwrite(a.snapshot, bot.snapshot())
+            imwrite(a.snapshot, bot.snapshot())
             print(f"snapshot -> {a.snapshot}")
     finally:
         bot.close()
@@ -32,7 +33,7 @@ def cmd_run(a):
 
 def cmd_detect(a):
     cfg, base = load_config(a.config)
-    img = cv2.imread(a.image)
+    img = imread(a.image)
     if img is None:
         sys.exit(f"cannot read {a.image}")
     specs = cfg.get("detectors", [])
@@ -44,7 +45,7 @@ def cmd_detect(a):
             print(f"            x={d.x:6.1f} y={d.y:6.1f} w={d.w:4.0f} h={d.h:4.0f} "
                   f"score={d.score:.2f} dist={d.distance:6.1f}")
     if a.out:
-        cv2.imwrite(a.out, overlay.draw(img, groups, me, "-", None))
+        imwrite(a.out, overlay.draw(img, groups, me, "-", None))
         print(f"overlay -> {a.out}")
 
 
@@ -53,13 +54,13 @@ def cmd_grab(a):
     from .io import build_source
 
     src = build_source(cfg.get("source", {}), base)
-    cv2.imwrite(a.out, src.grab())
+    imwrite(a.out, src.grab())
     src.close()
     print(f"frame -> {a.out}")
 
 
 def cmd_pick(a):
-    img = cv2.imread(a.image)
+    img = imread(a.image)
     if img is None:
         sys.exit(f"cannot read {a.image}")
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)

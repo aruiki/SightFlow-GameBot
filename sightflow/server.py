@@ -30,6 +30,7 @@ from .bot import build_groups
 from .detection import to_dict
 from .detectors import build_detectors
 from .graph import Ctx, Graph, GraphError, node_types_json
+from .imageio import imwrite
 from .io import KeyboardMouseInput, NullInput, build_source, list_windows
 from .motion import MotionTracker
 from .tracking import CentroidTracker
@@ -117,6 +118,10 @@ def friendly_error(e: Exception) -> str:
     if "ultralytics" in msg:
         return ("YOLO の部品が入っていません。コマンドで `pip install ultralytics` を実行するか、"
                 "検出器を「色」か「画像だけ」にしてください")
+    if "no window title" in msg:
+        return "取り込むウィンドウが選ばれていません。設定の「ウィンドウ」で一覧から選んでください"
+    if "capture area is empty" in msg:
+        return "ウィンドウが最小化されているようです。ゲームの画面を表示してください"
     if "no visible window" in msg:
         return ("指定した名前のウィンドウが見つかりません。ゲームを起動してから、"
                 "設定の「ウィンドウ」で一覧から選び直してください")
@@ -168,7 +173,7 @@ class Engine:
     # ------------------------------------------------------------- project
     def save(self):
         self.project_path.write_text(json.dumps(self.project, ensure_ascii=False, indent=2),
-                                     encoding="utf-8")
+                                     encoding="utf-8", newline="\n")
 
     def switch_project(self, path: Path):
         """Open another project file (mode goes back to stop)."""
@@ -225,7 +230,8 @@ class Engine:
         d = self.images_dir()
         d.mkdir(parents=True, exist_ok=True)
         fname = f"{safe_project_name(label)}.png"
-        cv2.imwrite(str(d / fname), frame[y:y + h, x:x + w])
+        if not imwrite(d / fname, frame[y:y + h, x:x + w]):
+            raise RuntimeError(f"画像を保存できませんでした: {d / fname}")
         rel = f"{d.name}/{fname}"
         settings = json.loads(json.dumps(self.project.get("settings", {})))
         det = settings.setdefault("detector", {})
@@ -287,13 +293,22 @@ class Engine:
             source = build_source(src_spec, ROOT / "demo")
             detectors = build_detectors(detector_specs(s.get("detector", {}), self.project_path.parent), ROOT)
             labels = [l for d in detectors for l in _labels_of(d)]
+            # Warm the detectors up now (YOLO's first call takes ~1 s, mostly GPU setup) so
+            # the first frame in watch/live mode is not late - a late frame would squash
+            # the waits of a recorded macro.
+            frame = source.grab()
+            for det in detectors:
+                det.detect(frame)
             sim_input = source.input_backend() if hasattr(source, "input_backend") else None
             live_input = None
             if sim_input is None:
                 live_input = KeyboardMouseInput(source, (s.get("input") or {}).get("move_keys"))
             with self.lock:
                 if self.source:
-                    self.source.close()
+                    try:
+                        self.source.close()
+                    except Exception:
+                        traceback.print_exc()
                 self.source, self.detectors, self.labels = source, detectors, labels
                 self._sim_input, self._live_input = sim_input, live_input
                 self.tracker.reset()
@@ -435,7 +450,7 @@ def create_app(project_path: Path):
         while path.exists():
             n += 1
             path = PROJECTS / f"{stem}_{n}.json"
-        path.write_text(json.dumps(new_project(name), ensure_ascii=False, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(new_project(name), ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
         engine.switch_project(path)
         return {"ok": True}
 
@@ -521,31 +536,55 @@ def create_app(project_path: Path):
     return app
 
 
+def _port_owner(host: str, port: int) -> str | None:
+    """None if the port is free, "sightflow" if SightFlow answers there, else "other"."""
+    import socket
+    import urllib.request
+
+    with socket.socket() as probe:
+        probe.settimeout(1)
+        if probe.connect_ex((host, port)) != 0:
+            return None
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/api/state", timeout=2) as r:
+            if "project_file" in json.loads(r.read().decode("utf-8")):
+                return "sightflow"
+    except Exception:
+        pass
+    return "other"
+
+
 def serve(project: str | None, host: str, port: int, open_browser: bool = True):
     import os
 
     import uvicorn
 
+    path = Path(project).resolve() if project else DEFAULT_PROJECT   # before chdir below
     (ROOT / "models").mkdir(exist_ok=True)
     os.chdir(ROOT / "models")   # Ultralytics downloads weights into the working dir
 
-    path = Path(project).resolve() if project else DEFAULT_PROJECT
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(new_project(path.stem), ensure_ascii=False, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(new_project(path.stem), ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
         print(f"created a new project: {path}")
     if not DIST.exists():
         print("note: web UI not built yet -> cd webui && npm install && npm run build")
-    url = f"http://{host}:{port}"
-    import socket
-
-    with socket.socket() as probe:
-        if probe.connect_ex((host, port)) == 0:   # already running (e.g. double-clicked twice)
+    # The port may be taken: by SightFlow itself (double-clicked twice) -> just open it,
+    # or by some other app -> move on to the next free port.
+    for _ in range(20):
+        owner = _port_owner(host, port)
+        if owner is None:
+            break
+        if owner == "sightflow":
+            url = f"http://{host}:{port}"
             print(f"SightFlow is already running: {url}")
             if open_browser:
                 import webbrowser
                 webbrowser.open(url)
             return
+        print(f"port {port} is used by another app; trying {port + 1}")
+        port += 1
+    url = f"http://{host}:{port}"
     print(f"SightFlow: {url}   project: {path}")
     if open_browser:
         import webbrowser

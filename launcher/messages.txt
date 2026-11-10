@@ -1,0 +1,13 @@
+nopython|[SightFlow] Python が見つかりません。
+nopython|  https://www.python.org/downloads/ から Python 3.10 以上を入れてください。
+nopython|  インストール時に「Add python.exe to PATH」にチェックを入れてください。
+setup|[SightFlow] 初回の準備をしています（数分かかります）...
+gpu|[SightFlow] NVIDIA GPU を見つけました。GPU 版 PyTorch を入れます...
+nodist|[SightFlow] 画面部分（webui\dist）がありません。
+nodist|  GitHub の Releases から「SightFlow-...-windows.zip」をダウンロードして使ってください。
+nodist|  （ソースから使う場合は Node.js を入れてください）
+build|[SightFlow] 画面部分をビルドしています...
+run|[SightFlow] 起動します。ブラウザが開かないときは、下に出る http://127.0.0.1:... を開いてください。
+run|  止めるときはこのウィンドウを閉じてください。
+fail|[SightFlow] 準備に失敗しました。上のメッセージを確認してください。
+fail|  やり直すときは、次のフォルダを消してから、もう一度ダブルクリックしてください:
