@@ -5,4 +5,4 @@ from .detectors import Detector, register
 from .flow import Flow
 
 __all__ = ["Bot", "load_config", "Detection", "LabelGroup", "Detector", "register", "Flow"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"
